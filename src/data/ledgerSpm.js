@@ -35,7 +35,7 @@ const POLA_NAMA_REKAP = /rekap.*spm.*kumulatif/i;
 /* Dipakai kalau pencarian berkas di folder SPJ gagal (offline/API error). */
 const REKAP_ID_CADANGAN = "105E2JFMvqK67xxSmoqoE0whcGWm8S8tu";
 
-const KUNCI_CACHE = "pu_ledger_spm_v2";
+const KUNCI_CACHE = "pu_ledger_spm_v3";
 const UMUR_CACHE_MS = 5 * 60 * 1000; // 5 menit
 
 const URUTAN_BULAN = BULAN_ANGGARAN_OPTIONS.map((b) => b.id);

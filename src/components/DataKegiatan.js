@@ -3055,7 +3055,8 @@ export default function DataKegiatan({ periode = null }) {
                                     /* Hanya tampilkan berkas PDF whose no SPM
                                        cocok dengan no SPM di ledger spreadsheet
                                        (untuk akun belanja ini). Bila tidak ada
-                                       data ledger, tampilkan semua berkas. */
+                                       data ledger, tampilkan semua berkas
+                                       yang bertanggal. */
                                     const spmNoLedger = new Set(
                                       blok
                                         ? blok.rows
@@ -3065,11 +3066,17 @@ export default function DataKegiatan({ periode = null }) {
                                                 rek
                                             )
                                             .map((r) => normalNoSpm(r.noSpm))
-                                        : []
+                                        : null
                                     );
                                     return (n.berkas || [])
                                       .filter((b) => b.spm && b.spm.tanggal)
                                       .filter((b) => {
+                                        /* Bila tidak ada data ledger (spmNoLedger
+                                           null), tampilkan semua berkas. Bila
+                                           ada ledger, hanya yang no SPM-nya
+                                           cocok dengan ledger (supaya SPM
+                                           bulan lain tidak ikut muncul). */
+                                        if (spmNoLedger === null) return true;
                                         const no = normalNoSpm(b.spm.noSpm);
                                         return !no || spmNoLedger.has(no);
                                       })
@@ -3281,6 +3288,7 @@ export default function DataKegiatan({ periode = null }) {
                   {" "}
                   · {modalSpm.baris.length} SPM
                   {modalSpm.tab ? ` (tab ${modalSpm.tab})` : ""}
+                  · {(modalSpm.pdf || []).length} bukti PDF
                 </span>
               </h4>
               <button
