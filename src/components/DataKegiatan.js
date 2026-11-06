@@ -1034,7 +1034,7 @@ export default function DataKegiatan({ periode = null }) {
   /* Muat ulang berkas SPM langsung dari folder Drive (bukan dari cache).
      `folders`: [{ kode, id?, link? }]; `liveKey` memastikan hasil hanya
      diterapkan ke modal yang masih terbuka. */
-  const muatBuktiSpmLive = useCallback(async (liveKey, folders) => {
+  const muatBuktiSpmLive = useCallback(async (liveKey, folders, bulan) => {
     const daftarFolder = (folders || []).filter((f) => f && (f.id || f.link));
     if (!liveKey || daftarFolder.length === 0) {
       setModalSpmLive({ memuat: false, galat: "", waktu: null });
@@ -1077,8 +1077,19 @@ export default function DataKegiatan({ periode = null }) {
       unik.sort((a, b) =>
         String(a.spm.tanggal || "").localeCompare(String(b.spm.tanggal || ""))
       );
+      /* Hanya ambil berkas PDF yang tanggal SPM-nya masuk bulan yang dipilih
+         (format YYYY-MM). Bila filter bulan tidak aktif (bulan kosong),
+         tampilkan semua berkas yang bertanggal. Ini memastikan bukti PDF
+         yang muncul di modal sesuai dengan SPM berdasarkan kode dan bulan
+         yang ditentukan (mis. no SPM 00006 → SPM 6_522112_120126_552780
+         hanya muncul saat filter bulan = 2026-01), bukan nilai bukti
+         laporan dari bulan lain. */
       const pdf = unik
         .filter((b) => b.spm.tanggal)
+        .filter((b) => {
+          if (!bulan) return true;
+          return String(b.spm.tanggal).slice(0, 7) === bulan;
+        })
         .map((b) => ({
           no: b.spm.noSpm,
           rek: b.spm.rekening,
@@ -3088,7 +3099,7 @@ export default function DataKegiatan({ periode = null }) {
                                 /* Lengkapi berkas langsung dari Drive. */
                                 muatBuktiSpmLive(liveKey, [
                                   { kode: rek, id: n.folderId, link: n.link },
-                                ]);
+                                ], applied.sampai);
                               }}
                               title={`Lihat ${jumlah} bukti laporan SPM — ${formatRupiah(
                                 total
@@ -3190,7 +3201,7 @@ export default function DataKegiatan({ periode = null }) {
                                   id: k.id,
                                   link: k.link,
                                 })),
-                              ]);
+                              ], applied.sampai);
                             }}
                             title={`Lihat ${baris.length} bukti laporan SPM — ${formatRupiah(total)}${jumlahPdf ? ` · ${jumlahPdf} berkas PDF di Drive` : ""}`}
                           >
