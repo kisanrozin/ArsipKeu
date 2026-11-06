@@ -1478,7 +1478,7 @@ export default function DataKegiatan({ periode = null }) {
     const dariDari = bulanIdDariYm(applied.sampai);
     if (dariDari) return perBulan[dariDari] ? dariDari : null;
     return bulanTerakhirDenganData(rekapSpm);
-  }, [rekapSpm, applied.sampai, applied.sampai]);
+  }, [rekapSpm, applied.sampai]);
 
   const rekapSpmBulan = useMemo(
     () => rekapRealisasiSpm(rekapSpm, TAHUN_ANGGARAN_AKTIF, bulanRekapSpm),
@@ -1576,7 +1576,7 @@ export default function DataKegiatan({ periode = null }) {
       if (!peta.has(k)) peta.set(k, isi);
     });
     return peta;
-  }, [ledgerSpm, applied.sampai, applied.sampai]);
+  }, [ledgerSpm, applied.sampai]);
 
   const ledgerTerpilihPilih = useCallback(
     (kode) => {
@@ -1649,7 +1649,7 @@ export default function DataKegiatan({ periode = null }) {
       });
     });
     return peta;
-  }, [ledgerSpm, applied.sampai, applied.sampai]);
+  }, [ledgerSpm, applied.sampai]);
   const filterBulanAktif = Boolean(applied.sampai || applied.sampai);
   /* ── Terapkan filter ────────────────────────────────────── */
   const tabelRows = useMemo(() => {
@@ -1742,7 +1742,7 @@ export default function DataKegiatan({ periode = null }) {
       const v = realisasiLedger.get(kunciKode(r.kode));
       return typeof v === "number" ? v : r.realisasi || 0;
     },
-    [realisasiLedger, applied.sampai, applied.sampai]
+    [realisasiLedger, applied.sampai]
   );
 
   /* ── Pohon hierarkis (kode induk → cabang → detail → akun) ── */
@@ -1942,7 +1942,7 @@ export default function DataKegiatan({ periode = null }) {
       });
     });
     return keluar;
-  }, [ledgerSpm, applied.sampai, applied.sampai]);
+  }, [ledgerSpm, applied.sampai]);
 
   const ledgerPeriodeTotal = useMemo(
     () => ledgerBarisPeriode.reduce((s, r) => s + (r.nilai || 0), 0),
@@ -1974,7 +1974,7 @@ export default function DataKegiatan({ periode = null }) {
       if (daftar.length) peta.set(r.kode, daftar);
     });
     return peta;
-  }, [semuaRows, applied.sampai, applied.sampai]);
+  }, [semuaRows, applied.sampai]);
 
 
 
@@ -2614,9 +2614,7 @@ export default function DataKegiatan({ periode = null }) {
                 <span>
                   Terhubung ke{" "}
                   <strong>
-                    {applied.sampai && applied.sampai && applied.sampai !== applied.sampai
-                      ? `${labelBulan(applied.sampai)} – ${labelBulan(applied.sampai)}`
-                      : labelBulan(applied.sampai || applied.sampai)}
+                    {labelBulan(applied.sampai)}
                   </strong>
                   :
                 </span>
@@ -3903,3 +3901,4 @@ export default function DataKegiatan({ periode = null }) {
 }
 
 export { cocokCari, normalCari };
+
