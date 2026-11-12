@@ -23,10 +23,9 @@ import React from "react";
    murni SVG supaya bundle tetap ringan.
    ══════════════════════════════════════════════════════════════ */
 
-/* Palet biru mengikuti contoh gambar: gelap → realisasi,
-   lebih terang → sisa pagu. */
+/* Palet: gelap → realisasi, abu-abu → sisa pagu. */
 const WARNA_REALISASI = "#1a6d9a";
-const WARNA_SISA = "#38a9c8";
+const WARNA_SISA = "#9ca3af";
 const WARNA_KOSONG = "#e2e8f0";
 
 function formatRupiah(n) {
@@ -38,10 +37,31 @@ function formatRupiah(n) {
 function formatPersen(n) {
   const num = Number(n);
   if (!isFinite(num)) return "—";
+  // Nol murni tampil ringkas seperti sebelumnya.
+  if (num === 0) {
+    return num.toLocaleString("id-ID", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }) + "%";
+  }
+  const abs = Math.abs(num);
+  // Khusus persentase kecil yang bila dibulatkan 2 desimal menjadi 0,00%
+  // tapi nilainya ada: tampilkan secukupnya sampai nilainya muncul.
+  // Selain itu (bulan/nilai normal) tetap 2 desimal seperti sebelumnya.
+  let maxDigits = 2;
+  if (abs < 0.005) {
+    const magnitude = Math.floor(Math.log10(abs)); // mis. 0,00034 -> -4
+    maxDigits = Math.min(8, Math.max(3, -magnitude + 1));
+  } else if (abs < 100 && 100 - abs < 0.005) {
+    // Nilai sangat dekat ke 100% (mis. sisa pagu 99,996%) agar tidak
+    // tampak "belum berkurang" karena pembulatan ke 100,00%.
+    const magnitude = Math.floor(Math.log10(100 - abs));
+    maxDigits = Math.min(8, Math.max(3, -magnitude + 1));
+  }
   return (
     num.toLocaleString("id-ID", {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      maximumFractionDigits: maxDigits,
     }) + "%"
   );
 }
@@ -56,22 +76,20 @@ function hitungIrisan(realisasi, pagu) {
 
   const irisan = [];
   if (paguNum > 0) {
-    if (realisasiNum > 0) {
-      irisan.push({
-        key: "realisasi",
-        label: "Persentase Realisasi",
-        value: Math.min(realisasiNum, paguNum),
-        color: WARNA_REALISASI,
-      });
-    }
-    if (sisa > 0) {
-      irisan.push({
-        key: "sisa",
-        label: "Persentase Sisa Pagu",
-        value: sisa,
-        color: WARNA_SISA,
-      });
-    }
+    // Selalu tampilkan kedua komponen bila pagu ada, termasuk saat
+    // realisasi 0,00%, supaya persentase tiap bulan tetap terbaca jelas.
+    irisan.push({
+      key: "realisasi",
+      label: "Persentase Realisasi",
+      value: Math.min(realisasiNum, paguNum),
+      color: WARNA_REALISASI,
+    });
+    irisan.push({
+      key: "sisa",
+      label: "Persentase Sisa Pagu",
+      value: sisa,
+      color: WARNA_SISA,
+    });
   }
 
   return {

@@ -44,7 +44,7 @@ const MIME_SPREADSHEET =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 /* Dipakai kalau folder Drive belum bisa dibaca (offline / API error). */
-const REKAP_ID_CADANGAN = "105E2JFMvqK67xxSmoqoE0whcGWm8S8tu";
+const REKAP_ID_CADANGAN = "1M021j_z3BzJRGmVwVXQWLr6Up3GYDIR8";
 
 /* Kode induk program TA 2026 — baris tingkat paling atas.
    Angka 4 digit (7769 / 7770); kode cabang memakai huruf

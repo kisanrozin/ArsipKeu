@@ -28,7 +28,7 @@ import { ambilRekapSpm } from "./rekapSpm";
 import { PAGU_KEGIATAN, bidangDariKegiatan } from "./masterData";
 
 const KUNCI = "pu_cache_data_kegiatan";
-const VERSI = 2;
+const VERSI = 3;
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 /* Nama rekening belanja sesuai alur digital */

@@ -33,9 +33,9 @@ const MIME_SPREADSHEET =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const POLA_NAMA_REKAP = /rekap.*spm.*kumulatif/i;
 /* Dipakai kalau pencarian berkas di folder SPJ gagal (offline/API error). */
-const REKAP_ID_CADANGAN = "105E2JFMvqK67xxSmoqoE0whcGWm8S8tu";
+const REKAP_ID_CADANGAN = "1M021j_z3BzJRGmVwVXQWLr6Up3GYDIR8";
 
-const KUNCI_CACHE = "pu_ledger_spm_v3";
+const KUNCI_CACHE = "pu_ledger_spm_v7";
 const UMUR_CACHE_MS = 5 * 60 * 1000; // 5 menit
 
 const URUTAN_BULAN = BULAN_ANGGARAN_OPTIONS.map((b) => b.id);
@@ -167,12 +167,11 @@ export function parseLedgerTab(rows) {
       const mTgl = uraian.match(/\((\d{1,2})-(\d{1,2})-(\d{4})\)/);
       let tanggal = null;
       if (mTgl) {
-        /* Format di spreadsheet uraian: (mm-dd-yyyy) — mis. (01-12-2026)
-           = 12 Januari 2026. Sebelumnya salah dibaca sebagai (dd-mm-yyyy),
-           sehingga tanggal Januari tertukar dengan bulan lain dan SPM
-           yang salah muncul saat filter bulan Januari. */
-        const mm = String(mTgl[1]).padStart(2, "0");
-        const dd = String(mTgl[2]).padStart(2, "0");
+        /* Format di spreadsheet uraian: (dd-mm-yyyy) — mis. (12-01-2026)
+           = 12 Januari 2026. Angka pertama adalah hari, kedua adalah bulan,
+           sesuai pola nama berkas SPM (ddmmyy) di Google Drive. */
+        const dd = String(mTgl[1]).padStart(2, "0");
+        const mm = String(mTgl[2]).padStart(2, "0");
         tanggal = `${mTgl[3]}-${mm}-${dd}`;
       }
       const rekening = mRek ? mRek[1] : rekeningKonteks;

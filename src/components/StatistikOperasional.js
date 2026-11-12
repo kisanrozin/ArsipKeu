@@ -16,6 +16,7 @@ import {
   dengarRekapSpm,
   rekapRealisasiSpm,
 } from "../data/rekapSpm";
+import { ambilLedgerSpm } from "../data/ledgerSpm";
 import {
   ambilRevisiDipa,
   dengarRevisiDipa,
@@ -30,6 +31,7 @@ import {
   dengarKegiatanTambahan,
   rekapRealisasiTambahan,
 } from "../data/KegiatanTambahan";
+import { bacaCacheKegiatan, dengarCacheKegiatan } from "../data/cacheKegiatan";
 
 /* ══════════════════════════════════════════════════════════════
    BLOK "RINGKASAN STATISTIK OPERASIONAL"
@@ -215,6 +217,36 @@ export default function StatistikOperasional({
      Ini sumber utama angka kartu "Realisasi Bulan (Rp.)". */
   const [rekapSpm, setRekapSpm] = useState(null);
   useEffect(() => dengarRekapSpm(setRekapSpm), []);
+  /* Ledger bukti SPM (Rekap SPM kumulatif per bulan) — dipakai tabel
+     "Total Digitalisasi Arsip Keuangan" untuk menghitung arsip/bukti
+     SPM tersimpan setiap bulannya dari tanggal SPM pada ledger. */
+  const [ledgerBukti, setLedgerBukti] = useState(null);
+  useEffect(() => {
+    const perBulan = (rekapSpm && rekapSpm.perBulan) || {};
+    let tabTerakhir = null;
+    for (let i = BULAN_OPTIONS.length - 1; i >= 0; i -= 1) {
+      const t = perBulan[BULAN_OPTIONS[i].id];
+      if (t && t.tab) {
+        tabTerakhir = t.tab;
+        break;
+      }
+    }
+    if (!tabTerakhir) {
+      setLedgerBukti(null);
+      return undefined;
+    }
+    let batal = false;
+    ambilLedgerSpm({ tabNama: tabTerakhir })
+      .then((hasil) => {
+        if (!batal) setLedgerBukti(hasil);
+      })
+      .catch(() => {
+        if (!batal) setLedgerBukti(null);
+      });
+    return () => {
+      batal = true;
+    };
+  }, [rekapSpm]);
   /* Data kegiatan yang diimpor lewat drag & drop folder (localStorage).
      Realisasi per bulan dari sumber ini ditambahkan ke angka Drive agar
      Dashboard ikut berubah seketika setelah folder dijatuhkan. */
@@ -387,17 +419,18 @@ export default function StatistikOperasional({
     // memo `rekapDipa` di atas dari folder DIPA di Drive).
     const revisi = revisiDipaBulan(rekapDipa, bulanId);
 
-    /* Realisasi hanya boleh berasal dari SPREADSHEET di Drive:
-       1) tab rekap kumulatif bulan ini (spreadsheet Data Kegiatan);
-       2) tab rekap SPM bulan ini ("Rekap SPM kumulatif per bulan").
-       Bila keduanya belum punya tab untuk bulan ini → kosong (0),
-       tanpa cadangan angka manual, supaya tidak pernah menampilkan
-       angka yang bukan isi Drive. */
-    const kegiatan = rekapSampaiTahun(rekapKegiatan, tahunNum, bulanId);
-    const pakaiKegiatan = kegiatan.ada && kegiatan.realisasi > 0;
-
+    /* Realisasi kartu "Realisasi Bulan (Rp.)" di beranda:
+       sumber utama = baris "Total Realisasi SPM" pada spreadsheet
+       "Rekap SPM kumulatif per bulan" (folder SPJ / Arsip Digital),
+       dibaca kumulatif s.d. bulan terpilih. Cadangan: tab rekap
+       kumulatif bulan itu pada spreadsheet Data Kegiatan. Bila
+       keduanya belum punya tab untuk bulan ini → kosong (0), tanpa
+       cadangan angka manual. */
     const spm = rekapRealisasiSpm(rekapSpm, tahunNum, bulanId);
-    const pakaiSpm = !pakaiKegiatan && spm.ada && spm.total > 0;
+    const pakaiSpm = spm.ada && spm.total > 0;
+
+    const kegiatan = rekapSampaiTahun(rekapKegiatan, tahunNum, bulanId);
+    const pakaiKegiatan = !pakaiSpm && kegiatan.ada && kegiatan.realisasi > 0;
 
     const nomorBulanIni = NOMOR_BULAN[bulanId] || 0;
     const kunciImpor = nomorBulanIni
@@ -572,23 +605,79 @@ export default function StatistikOperasional({
     if (setActivePage) setActivePage("data-kegiatan");
   };
 
-  // Hitung persentase untuk tabel Total Digitalisasi Arsip Keuangan.
-  // Total SPM diambil dari DATA KEGIATAN (rekap kumulatif spreadsheet),
-  // bukan dari nominal realisasi (Rp). Setiap kode rekening dihitung satu
-  // saja, sehingga duplikasi baris tidak membuat SPM terhitung dobel
-  // (lihat bacaRekapKumulatif di src/data/rekapKegiatan.js).
-  // Ambil jumlah SPM kumulatif dari bulan terakhir yang punya data.
-  const kumulatif = rekapKegiatan?.kumulatif || {};
-  const bulanKumulatif = Object.keys(kumulatif).sort(
-    (a, b) => NOMOR_BULAN[b] - NOMOR_BULAN[a]
-  );
-  const totalSpm = bulanKumulatif.length
-    ? Math.max(...bulanKumulatif.map((b) => Number(kumulatif[b].jumlahSpm || 0)))
-    : 0;
-  // Tersimpan = jumlah SPM tercatat pada bulan yang difilter (data kegiatan),
-  // dibatasi agar tidak melebihi total.
-  const tersimpanSpm = Math.min(totalSpm, Number(dataBulan.jumlahSpm || 0));
-  const tersimpanPct = totalSpm > 0 ? Math.round((tersimpanSpm / totalSpm) * 100) : 0;
+  // Cache berkas kegiatan (Drive) — dipakai untuk mencocokkan bukti PDF
+  // terhadap data SPM di spreadsheet (ledger), agar "tersimpan" berarti
+  // sudah ada bukti laporan PDF.
+  const [cacheKegiatanRows, setCacheKegiatanRows] = useState(() => {
+    const c = bacaCacheKegiatan();
+    return c && Array.isArray(c.rows) ? c.rows : [];
+  });
+  useEffect(() => {
+    const lepas = dengarCacheKegiatan((paket) => {
+      setCacheKegiatanRows(paket && Array.isArray(paket.rows) ? paket.rows : []);
+    });
+    return lepas;
+  }, []);
+
+  const normalNoSpm = (no) => {
+    const digit = String(no || "").replace(/\D/g, "");
+    return digit ? String(Number(digit)) : "";
+  };
+
+  // Set nomor SPM yang memiliki bukti PDF tersimpan (dari cache Drive).
+  const spmDenganPdf = useMemo(() => {
+    const set = new Set();
+    (cacheKegiatanRows || []).forEach((r) => {
+      (r.berkas || []).forEach((b) => {
+        const no = normalNoSpm(b && b.spm && b.spm.noSpm);
+        if (no) set.add(no);
+      });
+    });
+    return set;
+  }, [cacheKegiatanRows]);
+
+  // Tabel "Total Digitalisasi Arsip Keuangan":
+  // - Total/tersimpan/belum mengikuti jumlah SPM pada spreadsheet (ledger).
+  // - "Arsip tersimpan" = SPM di spreadsheet yang sudah punya bukti laporan PDF.
+  // - "Arsip belum tersimpan" = SPM di spreadsheet yang belum punya bukti PDF,
+  //   sehingga terlihat mana yang belum tersimpan.
+  const nomorBulanFilter = NOMOR_BULAN[bulan] || 0;
+  const digitalisasiSpm = useMemo(() => {
+    let total = 0;
+    let tersimpan = 0;
+    let totalTahun = 0;
+    let totalNilai = 0;
+    if (!ledgerBukti || !ledgerBukti.per) {
+      return { total: 0, tersimpan: 0, belum: 0, totalTahun: 0, totalNilai: 0 };
+    }
+    ledgerBukti.per.forEach((blok) => {
+      (blok.rows || []).forEach((r) => {
+        if (!r || !r.tanggal) return;
+        const m = Number(String(r.tanggal).slice(5, 7));
+        if (m < 1 || m > 12) return;
+        // Total keseluruhan SPM per tahun (tanpa filter bulan).
+        totalTahun += 1;
+        if (nomorBulanFilter && m !== nomorBulanFilter) return;
+        total += 1;
+        totalNilai += Number(r.nilai) || 0;
+        const no = normalNoSpm(r.noSpm);
+        if (no && spmDenganPdf.has(no)) tersimpan += 1;
+      });
+    });
+    return {
+      total,
+      tersimpan,
+      belum: Math.max(0, total - tersimpan),
+      totalTahun,
+      totalNilai,
+    };
+  }, [ledgerBukti, nomorBulanFilter, spmDenganPdf]);
+
+  const totalSpm = digitalisasiSpm.total;
+  const tersimpanSpm = digitalisasiSpm.tersimpan;
+  const belumSpm = digitalisasiSpm.belum;
+  const tersimpanPct =
+    totalSpm > 0 ? Math.round((tersimpanSpm / totalSpm) * 100) : 0;
   const belumTersimpanPct = totalSpm > 0 ? 100 - tersimpanPct : 0;
 
   return (
@@ -714,9 +803,7 @@ export default function StatistikOperasional({
               ? "Memuat rekap Realisasi SPM dari Google Drive…"
               : dataBulan.adaDataBulan
               ? `Kumulatif s.d. ${dataBulan.bulanDasar || dataBulan.label} ${dataBulan.tahunLabel}` +
-                (dataBulan.jumlahSpm > 0
-                  ? ` · ${dataBulan.jumlahSpm.toLocaleString("id-ID")} SPM`
-                  : "") +
+                ` · (SPM : ${tersimpanSpm.toLocaleString("id-ID")})` +
                 (dataBulan.adaImpor
                   ? ` · termasuk impor folder ${formatRupiah(
                       dataBulan.realisasiImpor
@@ -774,8 +861,8 @@ export default function StatistikOperasional({
       <div className="stat-table-wrap" style={{ marginTop: 32 }}>
         <div className="stat-table-caption">
           TOTAL DIGITALISASI ARSIP KEUANGAN{" "}
-          <span className="tabeltotal-jumlah">
-            {totalSpm} SPM
+          <span className="tabeltotal-jumlah" title="Total keseluruhan SPM yang sudah diberikan (per tahun)">
+            {digitalisasiSpm.totalTahun} SPM
           </span>
         </div>
         <table className="stat-table tabeltotal">
@@ -804,7 +891,7 @@ export default function StatistikOperasional({
                   />
                 </div>
                 <span className="tabeltotal-pct">
-                  {totalSpm - tersimpanSpm} SPM ({belumTersimpanPct} %)
+                  {belumSpm} SPM ({belumTersimpanPct} %)
                 </span>
               </td>
             </tr>
@@ -812,6 +899,9 @@ export default function StatistikOperasional({
         </table>
         <div className="tabeltotal-bawah">
           TOTAL <span className="tabeltotal-pct">{totalSpm} SPM</span>
+          <span className="stat-kpi-note" style={{ marginLeft: 8 }}>
+            (sumber: bukti SPM / ledger, mengikuti filter bulan)
+          </span>
         </div>
       </div>
     </div>

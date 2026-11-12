@@ -24,9 +24,9 @@ import { ambilTabSpreadsheet, nomorBulanDariTab } from "../data/daftarSheet";
 
 /* ─── Helper: ekstrak Google Spreadsheet ID ─── */
 export function getSheetId(rawUrl) {
-  if (!rawUrl) return "1DR7lNNAK4UBbFRGqhG2uDB5ANHmz-g8v";
+  if (!rawUrl) return "1M021j_z3BzJRGmVwVXQWLr6Up3GYDIR8";
   const m = rawUrl.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-  return m ? m[1] : "1DR7lNNAK4UBbFRGqhG2uDB5ANHmz-g8v";
+  return m ? m[1] : "1M021j_z3BzJRGmVwVXQWLr6Up3GYDIR8";
 }
 
 /* ─── Helper: konversi URL Google Sheets ke embed URL yang optimal ─── */
@@ -152,7 +152,7 @@ export function parseMonthlySheetRows(gvizJson) {
 }
 
 /* ─── Konstanta Default ─── */
-const DEFAULT_SHEET_BASE = "https://docs.google.com/spreadsheets/d/1DR7lNNAK4UBbFRGqhG2uDB5ANHmz-g8v/edit";
+const DEFAULT_SHEET_BASE = "https://docs.google.com/spreadsheets/d/1M021j_z3BzJRGmVwVXQWLr6Up3GYDIR8/edit";
 const DEFAULT_SHEET_NAME = "HASIL VERIFIKASI DIGITALISASI KEUANGAN TW 1.xlsx";
 
 /* ─── Pemetaan tab spreadsheet → id internal ───

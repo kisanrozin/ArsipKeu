@@ -39,7 +39,7 @@ export const API_KEY = "AIzaSyDuWHtZlBJ2MFERVARPT0084MATICbUv5k";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 /* Spreadsheet default (dipakai bila tautan lain belum dipasang). */
-export const DEFAULT_SHEET_ID = "1DR7lNNAK4UBbFRGqhG2uDB5ANHmz-g8v";
+export const DEFAULT_SHEET_ID = "1M021j_z3BzJRGmVwVXQWLr6Up3GYDIR8";
 
 /* Tab rekap kumulatif TIDAK diketik manual di sini.
    Namanya diambil dari daftar tab asli spreadsheet setiap kali data
