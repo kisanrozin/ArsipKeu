@@ -27,7 +27,7 @@ import StatistikOperasional from "./StatistikOperasional";
    atas navbar.
    ══════════════════════════════════════════════════════════════ */
 
-export default function TamuRingkasan({ setActivePage }) {
+export default function TamuRingkasan({ setActivePage, onFilterChange, periode }) {
   return (
     <>
       <HeroBanner
@@ -63,6 +63,9 @@ export default function TamuRingkasan({ setActivePage }) {
             setActivePage={setActivePage}
             readOnly
             pollMs={60000}
+            onFilterChange={onFilterChange}
+            bulan={periode ? periode.bulan : undefined}
+            tahun={periode ? periode.tahun : undefined}
           />
         </div>
 

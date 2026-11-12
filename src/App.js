@@ -185,7 +185,13 @@ function IsiApp() {
         case "histori-dipa":
           return <HistoriRevisiDipa setActivePage={gantiPage} periode={filterKegiatan} />;
         default:
-          return <TamuRingkasan setActivePage={gantiPage} />;
+          return (
+            <TamuRingkasan
+              setActivePage={gantiPage}
+              onFilterChange={teruskanFilterKegiatan}
+              periode={filterKegiatan}
+            />
+          );
       }
     }
 

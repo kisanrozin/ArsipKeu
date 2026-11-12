@@ -674,8 +674,8 @@ const LABEL_LEVEL = {
   induk: "Kode Induk",
   cabang: "Kode Cabang",
   detail: "Kode Detail",
-  kegiatan: "Kode Kegiatan",
-  akun: "Kode Akun Belanja",
+  kegiatan: "",
+  akun: "",
 };
 
 /* Rekap per kode akun belanja dari berkas SPM sebuah kegiatan */
@@ -1034,7 +1034,7 @@ export default function DataKegiatan({ periode = null }) {
   /* Muat ulang berkas SPM langsung dari folder Drive (bukan dari cache).
      `folders`: [{ kode, id?, link? }]; `liveKey` memastikan hasil hanya
      diterapkan ke modal yang masih terbuka. */
-  const muatBuktiSpmLive = useCallback(async (liveKey, folders, bulan) => {
+  const muatBuktiSpmLive = useCallback(async (liveKey, folders, bulan, baris = []) => {
     const daftarFolder = (folders || []).filter((f) => f && (f.id || f.link));
     if (!liveKey || daftarFolder.length === 0) {
       setModalSpmLive({ memuat: false, galat: "", waktu: null });
@@ -1059,7 +1059,8 @@ export default function DataKegiatan({ periode = null }) {
         files.forEach((file) => {
           const spm = parseBerkasSpm(file.name, rek);
           if (spm) bertanda.push({ ...file, spm, rekening: rek });
-          else lainnya.push({ ...file, rekening: rek });
+          /* Hanya berkas SPM standar (pola SPM_no_rekening_ddmmyy_nilai)
+             yang masuk ke bukti laporan SPM. Berkas lain diabaikan. */
         });
       });
       const sudah = new Set();
@@ -1098,27 +1099,37 @@ export default function DataKegiatan({ periode = null }) {
           nama: b.name,
           link: b.webViewLink,
         }));
-      const pdfTanpaTanggal = unik.filter((b) => !b.spm.tanggal);
+      /* Berkas tanpa tanggal tidak ditampilkan di bukti laporan SPM. */
+      const pdfTanpaTanggal = [];
       setModalSpm((m) => {
         if (!m || m.liveKey !== liveKey) return m;
+        /* Jika ada baris spreadsheet (dari parameter caller), hanya tampilkan
+           PDF yang no SPM-nya cocok dengan baris spreadsheet. Bila tidak ada
+           baris spreadsheet, tampilkan semua PDF yang lolos filter bulan. */
+        const pdfBaris = baris.length
+          ? new Set(baris.map((r) => normalNoSpm(r.no)))
+          : null;
+        const pdfTampil = pdfBaris
+          ? pdf.filter((b) => {
+              const no = normalNoSpm(b.no);
+              return !no || pdfBaris.has(no);
+            })
+          : pdf;
         return {
           ...m,
-          pdf,
+          pdf: pdfTampil,
           pdfTanpaTanggal,
-          pdfLainnya: lainnya,
-          /* Bila tidak ada baris spreadsheet, total diambil dari PDF
-             supaya ringkasan nilai tetap tampil. */
-          total:
-            m.baris && m.baris.length
-              ? m.total
-              : pdf.reduce((s, b) => s + (b.nilai || 0), 0),
+          pdfLainnya: [],
+          /* Total selalu dari baris spreadsheet (bukan dari PDF Drive)
+             agar jumlah nilai sesuai dengan no. SPM yang ditampilkan. */
+          total: m.baris && m.baris.length ? m.total : pdfTampil.reduce((s, b) => s + (b.nilai || 0), 0),
         };
       });
       setModalSpmLive({
         memuat: false,
         galat: "",
         waktu: Date.now(),
-        jumlahBerkas: pdf.length + pdfTanpaTanggal.length + lainnya.length,
+        jumlahBerkas: baris.length || pdf.length,
         salinan,
       });
     } catch (e) {
@@ -1478,7 +1489,7 @@ export default function DataKegiatan({ periode = null }) {
     const dariDari = bulanIdDariYm(applied.sampai);
     if (dariDari) return perBulan[dariDari] ? dariDari : null;
     return bulanTerakhirDenganData(rekapSpm);
-  }, [rekapSpm, applied.sampai]);
+  }, [rekapSpm, applied.sampai, applied.sampai]);
 
   const rekapSpmBulan = useMemo(
     () => rekapRealisasiSpm(rekapSpm, TAHUN_ANGGARAN_AKTIF, bulanRekapSpm),
@@ -1576,7 +1587,7 @@ export default function DataKegiatan({ periode = null }) {
       if (!peta.has(k)) peta.set(k, isi);
     });
     return peta;
-  }, [ledgerSpm, applied.sampai]);
+  }, [ledgerSpm, applied.sampai, applied.sampai]);
 
   const ledgerTerpilihPilih = useCallback(
     (kode) => {
@@ -1649,7 +1660,7 @@ export default function DataKegiatan({ periode = null }) {
       });
     });
     return peta;
-  }, [ledgerSpm, applied.sampai]);
+  }, [ledgerSpm, applied.sampai, applied.sampai]);
   const filterBulanAktif = Boolean(applied.sampai || applied.sampai);
   /* ── Terapkan filter ────────────────────────────────────── */
   const tabelRows = useMemo(() => {
@@ -1742,7 +1753,7 @@ export default function DataKegiatan({ periode = null }) {
       const v = realisasiLedger.get(kunciKode(r.kode));
       return typeof v === "number" ? v : r.realisasi || 0;
     },
-    [realisasiLedger, applied.sampai]
+    [realisasiLedger, applied.sampai, applied.sampai]
   );
 
   /* ── Pohon hierarkis (kode induk → cabang → detail → akun) ── */
@@ -1942,7 +1953,7 @@ export default function DataKegiatan({ periode = null }) {
       });
     });
     return keluar;
-  }, [ledgerSpm, applied.sampai]);
+  }, [ledgerSpm, applied.sampai, applied.sampai]);
 
   const ledgerPeriodeTotal = useMemo(
     () => ledgerBarisPeriode.reduce((s, r) => s + (r.nilai || 0), 0),
@@ -1961,10 +1972,10 @@ export default function DataKegiatan({ periode = null }) {
     const peta = new Map();
     const dari = applied.sampai;
     const sampai = applied.sampai;
-    const dalamRentang = (ym) =>
-      !!ym &&
-      (!dari || ym >= dari) &&
-      (!sampai || ym <= sampai);
+    const dalamRentang = (ym) => {
+      const m = ym ? String(ym).slice(0, 7) : null;
+      return !!m && (!dari || m >= dari) && (!sampai || m <= sampai);
+    };
     semuaRows.forEach((r) => {
       const semua = r.berkas || [];
       const daftar =
@@ -1974,7 +1985,7 @@ export default function DataKegiatan({ periode = null }) {
       if (daftar.length) peta.set(r.kode, daftar);
     });
     return peta;
-  }, [semuaRows, applied.sampai]);
+  }, [semuaRows, applied.sampai, applied.sampai]);
 
 
 
@@ -1995,25 +2006,26 @@ export default function DataKegiatan({ periode = null }) {
         !q || cocokCari(q, kode, r.nama, r.folderNama);
       const blok = ledgerTerpilihPilih(kode);
       const grup = new Map();
-      const tambah = (rek, tgl, no, nilai) => {
+      const tambah = (rek, tgl, no, nilai, uraian) => {
         const k = rek || "—";
         if (!grup.has(k)) {
-          grup.set(k, { rekening: k, nilai: 0, tanggal: null, spm: [] });
+          grup.set(k, { rekening: k, nilai: 0, tanggal: null, spm: [], rows: [] });
         }
         const g = grup.get(k);
         g.nilai += nilai || 0;
         if (tgl && (!g.tanggal || tgl > g.tanggal)) g.tanggal = tgl;
         if (no) g.spm.push(no);
+        g.rows.push({ no, rek: k, tgl, nilai, uraian: uraian || "" });
       };
       if (blok && blok.rows.length) {
         blok.rows.forEach((row) =>
-          tambah(row.rekening, row.tanggal, row.noSpm, row.nilai)
+          tambah(row.rekening, row.tanggal, row.noSpm, row.nilai, row.uraian)
         );
       } else {
-        (r.berkas || []).forEach((b) => {
-          if (!b.spm) return;
-          tambah(b.spm.rekening, b.spm.tanggal, b.spm.noSpm, b.spm.nilai);
-        });
+        /* Tanpa data ledger spreadsheet untuk kegiatan ini pada bulan
+           terpilih → tidak ada nomor SPM yang ditampilkan. Hanya data
+           dari spreadsheet (berwarna putih) yang digunakan, sesuai
+           tahun dan bulan filter. */
       }
       /* Berkas PDF kegiatan ini: bertanggal (dalam rentang filter),
          tanpa tanggal terbaca, dan berkas lain. Semua dihitung agar
@@ -2022,7 +2034,7 @@ export default function DataKegiatan({ periode = null }) {
       const pdfBerkas = berkasPerKegiatan.get(kode) || [];
       /* Filter bukti PDF agar hanya tampilkan berkas whose no SPM cocok
          dengan no SPM di ledger spreadsheet untuk kegiatan ini. Bila
-         tidak ada data ledger, tampilkan semua berkas. */
+         tidak ada data ledger spreadsheet, tidak tampilkan berkas PDF. */
       const pdfBerkasTercocok = blok
         ? pdfBerkas.filter((b) => {
             const no = normalNoSpm(b.spm.noSpm);
@@ -2031,38 +2043,23 @@ export default function DataKegiatan({ periode = null }) {
               blok.rows.some((r) => normalNoSpm(r.noSpm) === no)
             );
           })
-        : pdfBerkas;
+        : [];
       const pdfTanpaTanggal = (r.berkas || []).filter(
         (b) => b.spm && !b.spm.tanggal
       );
-      const pdfLainnya = r.lainnya || [];
+      /* Bukti PDF hanya dari berkas SPM yang pola namanya standar
+         (SPM_no_rekening_ddmmyy_nilai.pdf) dan sesuai bulan terpilih.
+         Berkas non-SPM / nama tidak standar (mis.
+         7770-EBA-994-C-552780-522112.pdf atau SPM 00524 ...) tidak
+         tampil di kolom Bukti PDF. */
+      const pdfLainnya = [];
       const jumlahPdf =
-        pdfBerkasTercocok.length + pdfTanpaTanggal.length + pdfLainnya.length;
+        pdfBerkasTercocok.length + pdfTanpaTanggal.length;
 
       if (!grup.size) {
-        /* Kegiatan tanpa SPM sama sekali → tetap ditampilkan, supaya
-           tidak ada baris yang "hilang" saat mode filter. Untuk data
-           yang diinput lewat "+ Tambah Data", angka realisasi manual
-           tetap ditampilkan (bukan 0). */
-        keluar.push({
-          kode,
-          kegiatan: r.nama || kode,
-          uraian: r.lokal ? "Data input manual" : "Belum ada SPM",
-          realisasi: r.realisasi || 0,
-          tanggal: r.tanggal,
-          spm: [],
-          pdf: pdfBerkasTercocok.map((b) => ({
-            no: b.spm.noSpm,
-            rek: b.spm.rekening,
-            nilai: b.spm.nilai,
-            tgl: b.spm.tanggal,
-            nama: b.name,
-            link: b.webViewLink,
-          })),
-          pdfTanpaTanggal,
-          pdfLainnya,
-          jumlahPdf,
-        });
+        /* Kegiatan tanpa data SPM pada bulan terpilih → tidak ditampilkan
+           sama sekali. Hanya kegiatan yang memiliki bukti SPM pada bulan
+           yang difilter yang tampil di tabel. */
         return;
       }
 
@@ -2085,6 +2082,8 @@ export default function DataKegiatan({ periode = null }) {
           realisasi: g.nilai,
           tanggal: g.tanggal || r.tanggal,
           spm: g.spm,
+          /* Baris spreadsheet untuk modal (sesuai no. SPM yang tampil). */
+          baris: g.rows,
           /* Bukti PDF di Drive untuk kode kegiatan ini (dengan tautan). */
           pdf: pdfBerkasTercocok.map((b) => ({
             no: b.spm.noSpm,
@@ -2094,9 +2093,9 @@ export default function DataKegiatan({ periode = null }) {
             nama: b.name,
             link: b.webViewLink,
           })),
-          pdfTanpaTanggal,
-          pdfLainnya,
-          jumlahPdf,
+          pdfTanpaTanggal: [],
+          pdfLainnya: [],
+          jumlahPdf: g.rows.length,
         });
       });
     });
@@ -2556,7 +2555,7 @@ export default function DataKegiatan({ periode = null }) {
             title={
               semuaBuka
                 ? "Tutup semua rincian"
-                : "Buka rincian sampai kode akun belanja"
+                : "Buka semua rincian"
             }
           >
             {semuaBuka ? "▴ Tutup Semua" : "▾ Buka Semua"}
@@ -2614,7 +2613,9 @@ export default function DataKegiatan({ periode = null }) {
                 <span>
                   Terhubung ke{" "}
                   <strong>
-                    {labelBulan(applied.sampai)}
+                    {applied.sampai && applied.sampai && applied.sampai !== applied.sampai
+                      ? `${labelBulan(applied.sampai)} – ${labelBulan(applied.sampai)}`
+                      : labelBulan(applied.sampai || applied.sampai)}
                   </strong>
                   :
                 </span>
@@ -2626,6 +2627,10 @@ export default function DataKegiatan({ periode = null }) {
                 </span>
                 <span>
                   <strong>{ringkasBulan.berkas}</strong> bukti kerja
+                </span>
+                <span>
+                  <strong>{ledgerBarisPeriode.length}</strong> bukti SPM{" "}
+                  · {formatRupiah(ledgerPeriodeTotal)}
                 </span>
                 {ringkasBulan.jumlah === 0 && (
                   <span className="dk-kosong">
@@ -2838,11 +2843,11 @@ export default function DataKegiatan({ periode = null }) {
                               kode: b.kode,
                               nama: b.kegiatan,
                               tab: ledgerTabNama,
-                              baris: [],
-                              total: 0,
+                              baris: b.baris || [],
+                              total: b.realisasi || 0,
                               pdf: b.pdf,
-                              pdfTanpaTanggal: b.pdfTanpaTanggal,
-                              pdfLainnya: b.pdfLainnya,
+                              pdfTanpaTanggal: [],
+                              pdfLainnya: [],
                             })
                           }
                           title={`Lihat ${b.jumlahPdf} berkas SPM di Google Drive`}
@@ -2924,15 +2929,11 @@ export default function DataKegiatan({ periode = null }) {
                           <span className="dk-kegiatan" title={n.nama}>
                             {n.nama || "—"}
                           </span>
-                          <span className="dk-level-tag">Kode Kegiatan</span>
                         </>
                       ) : n.tipe === "akun" ? (
                         <>
                           <span className="dk-kegiatan" title={n.nama}>
                             {n.nama}
-                          </span>
-                          <span className="dk-level-tag dk-level-tag-akun">
-                            Kode Akun Belanja
                           </span>
                           <span className="dk-sub">
                             {(() => {
@@ -3026,12 +3027,15 @@ export default function DataKegiatan({ periode = null }) {
                           const tanpa = (n.berkas || []).filter(
                             (b) => b.spm && !b.spm.tanggal
                           );
-                          const lain = n.lainnya || [];
+                          /* Bukti PDF hanya dari berkas SPM standar.
+                             Berkas non-SPM tidak tampil di modal. */
+                          const lain = [];
                           const total = daftar.reduce(
                             (s, r) => s + (r.nilai || 0),
                             0
                           );
-                          const jumlah = daftar.length + tanpa.length + lain.length;
+                          /* Jumlah sesuai baris spreadsheet (no. SPM yang ditampilkan). */
+                          const jumlah = daftar.length;
                           if (!jumlah) {
                             return <span className="dk-kosong">—</span>;
                           }
@@ -3053,8 +3057,7 @@ export default function DataKegiatan({ periode = null }) {
                                     /* Hanya tampilkan berkas PDF whose no SPM
                                        cocok dengan no SPM di ledger spreadsheet
                                        (untuk akun belanja ini). Bila tidak ada
-                                       data ledger, tampilkan semua berkas
-                                       yang bertanggal. */
+                                       data ledger, tampilkan semua berkas. */
                                     const spmNoLedger = new Set(
                                       blok
                                         ? blok.rows
@@ -3064,17 +3067,11 @@ export default function DataKegiatan({ periode = null }) {
                                                 rek
                                             )
                                             .map((r) => normalNoSpm(r.noSpm))
-                                        : null
+                                        : []
                                     );
                                     return (n.berkas || [])
                                       .filter((b) => b.spm && b.spm.tanggal)
                                       .filter((b) => {
-                                        /* Bila tidak ada data ledger (spmNoLedger
-                                           null), tampilkan semua berkas. Bila
-                                           ada ledger, hanya yang no SPM-nya
-                                           cocok dengan ledger (supaya SPM
-                                           bulan lain tidak ikut muncul). */
-                                        if (spmNoLedger === null) return true;
                                         const no = normalNoSpm(b.spm.noSpm);
                                         return !no || spmNoLedger.has(no);
                                       })
@@ -3087,8 +3084,8 @@ export default function DataKegiatan({ periode = null }) {
                                         link: b.webViewLink,
                                       }));
                                   })(),
-                                  pdfTanpaTanggal: tanpa,
-                                  pdfLainnya: lain,
+                                  pdfTanpaTanggal: [],
+                                  pdfLainnya: [],
                                   rekening: n.link
                                     ? [
                                         {
@@ -3104,13 +3101,13 @@ export default function DataKegiatan({ periode = null }) {
                                 /* Lengkapi berkas langsung dari Drive. */
                                 muatBuktiSpmLive(liveKey, [
                                   { kode: rek, id: n.folderId, link: n.link },
-                                ], applied.sampai);
+                                ], applied.sampai, daftar);
                               }}
                               title={`Lihat ${jumlah} bukti laporan SPM — ${formatRupiah(
                                 total
                               )}`}
                             >
-                              📎 {n.jumlahBerkas || jumlah} berkas
+                              📎 {jumlah} berkas
                             </button>
                           );
                         }
@@ -3122,7 +3119,9 @@ export default function DataKegiatan({ periode = null }) {
                         const tanpaTanggal = (n.berkas || []).filter(
                           (b) => b.spm && !b.spm.tanggal
                         );
-                        const lainnya = n.lainnya || [];
+                        /* Bukti PDF hanya dari berkas SPM standar.
+                           Berkas non-SPM tidak tampil di modal. */
+                        const lainnya = [];
                         const baris = blok
                           ? blok.rows.map((r) => ({
                               no: r.noSpm,
@@ -3131,16 +3130,8 @@ export default function DataKegiatan({ periode = null }) {
                               nilai: r.nilai,
                               uraian: r.uraian,
                             }))
-                          : daftar.map((b) => ({
-                              no: b.spm.noSpm,
-                              rek: b.spm.rekening,
-                              tgl: b.spm.tanggal,
-                              nilai: b.spm.nilai,
-                              uraian: b.name,
-                              link: b.webViewLink,
-                            }));
-                        const jumlahPdf =
-                          daftar.length + tanpaTanggal.length + lainnya.length;
+                          : [];
+                        const jumlahPdf = baris.length;
                         if (!baris.length && !jumlahPdf) {
                           return <span className="dk-kosong">—</span>;
                         }
@@ -3159,8 +3150,7 @@ export default function DataKegiatan({ periode = null }) {
                               /* Hanya tampilkan berkas PDF whose no SPM cocok
                                  dengan no SPM di ledger spreadsheet, supaya
                                  bukti yang tampil sesuai (mis. 00006T bukan
-                                 00524). Bila tidak ada data ledger, tampilkan
-                                 semua berkas. */
+                                 00524). Data hanya dari spreadsheet. */
                               const spmNoLedger = new Set(
                                 baris.map((r) => normalNoSpm(r.no))
                               );
@@ -3187,10 +3177,8 @@ export default function DataKegiatan({ periode = null }) {
                                 total,
                                 liveKey,
                                 pdf: pdfDariBerkas,
-                                pdfTanpaTanggal: (n.berkas || []).filter(
-                                  (b) => b.spm && !b.spm.tanggal
-                                ),
-                                pdfLainnya: n.lainnya || [],
+                                pdfTanpaTanggal: [],
+                                pdfLainnya: [],
                                 /* Folder kode akun belanja yang ada di Drive
                                    (folder anak kegiatan) — dipakai untuk
                                    memecah bukti per kode belanja. */
@@ -3206,7 +3194,7 @@ export default function DataKegiatan({ periode = null }) {
                                   id: k.id,
                                   link: k.link,
                                 })),
-                              ], applied.sampai);
+                              ], applied.sampai, baris);
                             }}
                             title={`Lihat ${baris.length} bukti laporan SPM — ${formatRupiah(total)}${jumlahPdf ? ` · ${jumlahPdf} berkas PDF di Drive` : ""}`}
                           >
@@ -3286,7 +3274,6 @@ export default function DataKegiatan({ periode = null }) {
                   {" "}
                   · {modalSpm.baris.length} SPM
                   {modalSpm.tab ? ` (tab ${modalSpm.tab})` : ""}
-                  · {(modalSpm.pdf || []).length} bukti PDF
                 </span>
               </h4>
               <button
@@ -3344,79 +3331,30 @@ export default function DataKegiatan({ periode = null }) {
                 {(() => {
                   const normNo = (s) =>
                     String(s || "").replace(/\D/g, "").replace(/^0+(?=\d)/, "");
-                  /* Berkas PDF jadi sumber utama (primary); SPM dari
-                     spreadsheet yang sudah punya berkas tidak diulang. */
-                  const pdfNorm = new Set();
-                  const pdfKunci = new Set();
-                  (modalSpm.pdf || []).forEach((b) => {
-                    pdfNorm.add(normNo(b.no));
-                    pdfKunci.add(`${b.rek}|${b.tgl}|${b.nilai}`);
-                  });
+                  /* Hanya tampilkan baris dari spreadsheet (modalSpm.baris) —
+                     jumlah di modal = jumlah SPM di tabel, sesuai kode akun
+                     belanja. Tidak menambahkan PDF/berkas dari Drive yang
+                     tidak ada di spreadsheet. */
                   const grup = new Map();
                   const ambil = (rek) => {
                     const kunci = String(rek || "—").trim() || "—";
                     if (!grup.has(kunci)) grup.set(kunci, []);
                     return grup.get(kunci);
                   };
-                  (modalSpm.pdf || []).forEach((b) => ambil(b.rek).push(b));
-                  /* Berkas yang namanya tidak sesuai pola: cocokkan nomor
-                     SPM-nya dengan baris spreadsheet. Bila cocok, baris itu
-                     yang diberi tautan PDF (tanggal & nilai tetap lengkap),
-                     bukan tampil sebagai berkas "tanpa nilai". */
-                  const lainTersisa = new Map(); // `${rek}|${no}` → berkas[]
-                  (modalSpm.pdfLainnya || []).forEach((b) => {
-                    const m = String(b.name || "").match(/SPM\s*[_-]?\s*(\d+)/i);
-                    const rek = String(b.rekening || "").trim() || "—";
-                    if (m) {
-                      const kunci = `${rek}|${normNo(m[1])}`;
-                      if (!lainTersisa.has(kunci)) lainTersisa.set(kunci, []);
-                      lainTersisa.get(kunci).push(b);
-                    } else {
-                      ambil(rek).push({
-                        no: b.name,
-                        tgl: null,
-                        nilai: null,
-                        nama: b.name,
-                        link: b.webViewLink,
-                        berkasLain: true,
-                      });
-                    }
+                  /* Map nomor SPM → link PDF dari Drive (untuk tautan saja). */
+                  const pdfByNo = new Map();
+                  (modalSpm.pdf || []).forEach((b) => {
+                    const key = normNo(b.no);
+                    if (key && !pdfByNo.has(key)) pdfByNo.set(key, b);
                   });
                   (modalSpm.baris || []).forEach((r) => {
-                    if (
-                      pdfNorm.has(normNo(r.no)) ||
-                      pdfKunci.has(`${r.rek}|${r.tgl}|${r.nilai}`)
-                    )
-                      return;
                     const rek = String(r.rek || "").trim() || "—";
-                    const cocok = lainTersisa.get(`${rek}|${normNo(r.no)}`);
-                    const berkas = cocok && cocok.length ? cocok.shift() : null;
-                    ambil(r.rek).push(
-                      berkas
-                        ? {
-                            ...r,
-                            link: berkas.webViewLink,
-                            nama: berkas.name,
-                          }
-                        : r
+                    const pdf = pdfByNo.get(normNo(r.no));
+                    ambil(rek).push(
+                      pdf ? { ...r, link: pdf.link, nama: pdf.nama } : r
                     );
                   });
-                  /* Sisa berkas yang nomor SPM-nya tidak ada di spreadsheet. */
-                  lainTersisa.forEach((daftar, kunci) => {
-                    const rek = kunci.split("|")[0];
-                    daftar.forEach((b) => {
-                      ambil(rek).push({
-                        no: b.name,
-                        tgl: null,
-                        nilai: null,
-                        nama: b.name,
-                        link: b.webViewLink,
-                        berkasLain: true,
-                      });
-                    });
-                  });
-                  /* Folder kode akun belanja di Drive (folder anak
-                     kegiatan) — untuk urutan dan tautan ke foldernya. */
+                  /* Folder kode akun belanja di Drive (untuk tautan folder). */
                   const folder = new Map(
                     (modalSpm.rekening || []).map((k) => [
                       String(k.kode || "—").trim(),
@@ -3438,17 +3376,9 @@ export default function DataKegiatan({ periode = null }) {
                             <span className="dk-grup-belanja-nama">
                               {namaRekening(rek)}
                             </span>
-                            <span className="dk-level-tag dk-level-tag-akun">
-                              Kode Akun Belanja
-                            </span>
                             <span className="dk-sub">
-                              {daftar.length} berkas · total{" "}
+                              {daftar.length} SPM · total{" "}
                               {formatRupiah(totalGrup)}
-                              {daftar.some((b) => b.berkasLain)
-                                ? ` · ${
-                                    daftar.filter((b) => b.berkasLain).length
-                                  } tanpa nilai SPM`
-                                : ""}
                             </span>
                             {f && f.link && (
                               <a
@@ -3465,7 +3395,7 @@ export default function DataKegiatan({ periode = null }) {
                           <table className="dk-table dk-table-modal">
                             <thead>
                               <tr>
-                                <th>No. SPM / Berkas</th>
+                                <th>No. SPM</th>
                                 {!modalSpm.kode && <th>Kegiatan</th>}
                                 <th style={{ textAlign: "center" }}>
                                   Tanggal
@@ -3484,12 +3414,8 @@ export default function DataKegiatan({ periode = null }) {
                                         rel="noreferrer"
                                         title={b.nama || b.uraian}
                                       >
-                                        {b.berkasLain && b.no.length > 70
-                                          ? `${b.no.slice(0, 70)}…`
-                                          : b.no}
+                                        {b.no}
                                       </a>
-                                    ) : b.berkasLain && b.no.length > 70 ? (
-                                      `${b.no.slice(0, 70)}…`
                                     ) : (
                                       b.no
                                     )}
@@ -3622,7 +3548,7 @@ export default function DataKegiatan({ periode = null }) {
               <div className="modal-body">
                 {/* Kode kegiatan — diisi satu level per satu */}
                 <div className="form-group">
-                  <label>Kode Kegiatan *</label>
+                  <label>Kode *</label>
                   <div className="dk-segbar">
                     {Array.from({ length: jumlahLevel }, (_, i) => {
                       const nilai = formTambah.segmen[i] || "";
@@ -3901,4 +3827,3 @@ export default function DataKegiatan({ periode = null }) {
 }
 
 export { cocokCari, normalCari };
-
