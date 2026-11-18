@@ -625,6 +625,10 @@ export default function StatistikOperasional({
   );
 
   const [modalRekap, setModalRekap] = useState(null); // "tersimpan" | "belum" | null
+  const [cariRekap, setCariRekap] = useState("");
+  useEffect(() => {
+    setCariRekap("");
+  }, [modalRekap]);
   const barisRekapModal = useMemo(() => {
     if (!modalRekap) return [];
     const rows = (ketersediaanArsip && ketersediaanArsip.rows) || [];
@@ -636,6 +640,17 @@ export default function StatistikOperasional({
       return true;
     });
   }, [modalRekap, ketersediaanArsip, nomorBulanFilter]);
+  const barisRekapTampil = useMemo(() => {
+    const q = cariRekap.trim().toLowerCase();
+    if (!q) return barisRekapModal;
+    return barisRekapModal.filter((r) => {
+      const noRaw = String(r.noSpm || "").toLowerCase();
+      const noFmt = String(formatNoSpm(r.noSpm) || "").toLowerCase();
+      const tgl = String(r.tanggal || "").toLowerCase();
+      const status = String(r.status || (r.tersimpan ? "LENGKAP" : "BELUM LENGKAP")).toLowerCase();
+      return noRaw.includes(q) || noFmt.includes(q) || tgl.includes(q) || status.includes(q);
+    });
+  }, [barisRekapModal, cariRekap]);
 
   const totalSpm = digitalisasiSpm.total;
   const tersimpanSpm = digitalisasiSpm.tersimpan;
@@ -891,55 +906,139 @@ export default function StatistikOperasional({
 
       {modalRekap && (
         <div
-          className="modal-overlay"
+          className="modal-overlay rekap-modal-overlay"
           onClick={() => setModalRekap(null)}
           role="dialog"
           aria-modal="true"
           aria-label="Rekap Ketersediaan Arsip Digital"
         >
           <div
-            className="modal-box"
-            style={{ maxWidth: 760, maxHeight: "85vh", display: "flex", flexDirection: "column" }}
+            className={`modal-box rekap-modal rekap-modal--${modalRekap}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="modal-header">
-              <h4>
-                Rekap {modalRekap === "tersimpan" ? "Arsip Tersimpan" : "Arsip Belum Tersimpan"}
-                {" — "}Kumulatif s.d. {dataBulan.label} {dataBulan.tahunLabel}
-              </h4>
+            <div className="rekap-modal-header">
+              <div className="rekap-modal-header-main">
+                <div className="rekap-modal-icon" aria-hidden="true">
+                  {modalRekap === "tersimpan" ? "📁" : "📋"}
+                </div>
+                <div>
+                  <div className="rekap-modal-eyebrow">Ketersediaan Arsip Digital</div>
+                  <h4 className="rekap-modal-title">
+                    Rekap {modalRekap === "tersimpan" ? "Arsip Tersimpan" : "Arsip Belum Tersimpan"}
+                  </h4>
+                  <div className="rekap-modal-subtitle">
+                    Kumulatif s.d. {dataBulan.label} {dataBulan.tahunLabel}
+                  </div>
+                </div>
+              </div>
               <button
                 type="button"
-                className="modal-close-btn"
+                className="rekap-modal-close"
                 onClick={() => setModalRekap(null)}
                 aria-label="Tutup"
               >
                 ✕
               </button>
             </div>
-            <div className="modal-body" style={{ overflow: "auto", flex: 1 }}>
-              <div className="stat-kpi-note" style={{ marginBottom: 10 }}>
-                {barisRekapModal.length} SPM · sumber: Data Kegiatan (Ketersediaan Arsip Digital)
+
+            <div className="rekap-modal-summary">
+              <div className="rekap-summary-chip rekap-summary-chip--count">
+                <span className="rekap-summary-chip-label">
+                  {cariRekap.trim() ? "Hasil Pencarian" : "Jumlah SPM"}
+                </span>
+                <span className="rekap-summary-chip-value">
+                  {cariRekap.trim()
+                    ? `${barisRekapTampil.length} / ${barisRekapModal.length}`
+                    : barisRekapModal.length}
+                </span>
               </div>
+              <div
+                className={`rekap-summary-chip ${
+                  modalRekap === "tersimpan"
+                    ? "rekap-summary-chip--ok"
+                    : "rekap-summary-chip--warn"
+                }`}
+              >
+                <span className="rekap-summary-chip-label">Status</span>
+                <span className="rekap-summary-chip-value">
+                  {modalRekap === "tersimpan" ? "Lengkap" : "Belum Lengkap"}
+                </span>
+              </div>
+              <div className="rekap-summary-chip">
+                <span className="rekap-summary-chip-label">Sumber</span>
+                <span className="rekap-summary-chip-value rekap-summary-chip-value--sm">
+                  Data Kegiatan
+                </span>
+              </div>
+              <div className="rekap-summary-search">
+                <div className="rekap-search-wrap">
+                  <span className="rekap-search-icon" aria-hidden="true">🔎</span>
+                  <input
+                    type="text"
+                    className="rekap-search-input"
+                    value={cariRekap}
+                    onChange={(e) => setCariRekap(e.target.value)}
+                    placeholder="Cari kode SPM..."
+                    aria-label="Cari rekap SPM"
+                  />
+                  {cariRekap && (
+                    <button
+                      type="button"
+                      className="rekap-search-clear"
+                      onClick={() => setCariRekap("")}
+                      aria-label="Hapus pencarian"
+                      title="Hapus pencarian"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-body rekap-modal-body">
               {barisRekapModal.length === 0 ? (
-                <div style={{ color: "#64748b", fontSize: 14 }}>Tidak ada data.</div>
+                <div className="rekap-empty">
+                  <div className="rekap-empty-icon" aria-hidden="true">📭</div>
+                  <div className="rekap-empty-title">Tidak ada data</div>
+                  <div className="rekap-empty-desc">
+                    Belum ada SPM pada kategori ini untuk periode yang dipilih.
+                  </div>
+                </div>
+              ) : barisRekapTampil.length === 0 ? (
+                <div className="rekap-empty">
+                  <div className="rekap-empty-icon" aria-hidden="true">🔍</div>
+                  <div className="rekap-empty-title">Data tidak ditemukan</div>
+                  <div className="rekap-empty-desc">
+                    Tidak ada hasil untuk "<strong>{cariRekap}</strong>". Coba kata kunci lain.
+                  </div>
+                </div>
               ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table className="stat-table" style={{ fontSize: 13 }}>
+                <div className="rekap-table-wrap">
+                  <table className="rekap-table">
                     <thead>
                       <tr>
-                        <th style={{ width: 48 }}>No</th>
+                        <th className="rekap-col-no">No</th>
                         <th>Nomor SPM</th>
                         <th>Tanggal</th>
                         <th>Ketersediaan Arsip Digital</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {barisRekapModal.map((r, idx) => (
+                      {barisRekapTampil.map((r, idx) => (
                         <tr key={`${r.noSpm}-${r.tanggal || ""}-${idx}`}>
-                          <td>{idx + 1}</td>
-                          <td>{formatNoSpm(r.noSpm)}</td>
+                          <td className="rekap-col-no">{idx + 1}</td>
+                          <td className="rekap-col-spm">{formatNoSpm(r.noSpm)}</td>
                           <td>{r.tanggal || "—"}</td>
-                          <td>{r.status || (r.tersimpan ? "LENGKAP" : "—")}</td>
+                          <td>
+                            <span
+                              className={`rekap-status-pill ${
+                                r.tersimpan ? "rekap-status-pill--ok" : "rekap-status-pill--warn"
+                              }`}
+                            >
+                              {r.status || (r.tersimpan ? "LENGKAP" : "BELUM LENGKAP")}
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -947,7 +1046,12 @@ export default function StatistikOperasional({
                 </div>
               )}
             </div>
-            <div className="modal-footer">
+            <div className="modal-footer rekap-modal-footer">
+              <span className="rekap-footer-note">
+                {cariRekap.trim()
+                  ? `Menampilkan ${barisRekapTampil.length} dari ${barisRekapModal.length} data`
+                  : `Menampilkan ${barisRekapModal.length} data sesuai filter periode`}
+              </span>
               <button type="button" className="btn-cancel" onClick={() => setModalRekap(null)}>
                 Tutup
               </button>

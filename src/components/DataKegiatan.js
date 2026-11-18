@@ -2749,11 +2749,7 @@ export default function DataKegiatan({ periode = null }) {
                     );
                   })}
                 </div>
-                <div className="dk-spark-footer">
-                  <span className="dk-spark-keterangan">
-                    Tinggi batang = banyaknya kegiatan di bulan tersebut · klik batang untuk filter kumulatif Januari s.d. bulan yang dipilih
-                  </span>
-                </div>
+
               </>
             )}
           </div>
@@ -3331,8 +3327,8 @@ export default function DataKegiatan({ periode = null }) {
       {modalSpm && (
         <div className="modal-overlay" onClick={() => setModalSpm(null)}>
           <div
-            className="modal-box"
-            style={{ maxWidth: 820 }}
+            className="modal-box dk-modal-spm"
+            style={{ maxWidth: 860 }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-header">
@@ -3353,36 +3349,7 @@ export default function DataKegiatan({ periode = null }) {
                 ✕
               </button>
             </div>
-            {/* Status pemuatan ulang berkas langsung dari Google Drive. */}
-            {modalSpmLive && (
-              <div
-                className={`dk-modal-live${
-                  modalSpmLive.galat ? " dk-modal-live-galat" : ""
-                }`}
-              >
-                {modalSpmLive.memuat ? (
-                  <>⟳ Memuat berkas terbaru dari Google Drive…</>
-                ) : modalSpmLive.galat ? (
-                  <>
-                    ⚠ Gagal memuat data terbaru ({modalSpmLive.galat}) —
-                    menampilkan data tersimpan.
-                  </>
-                ) : modalSpmLive.waktu ? (
-                  <>
-                    ● Realtime — {modalSpmLive.jumlahBerkas} berkas diperiksa
-                    {modalSpmLive.salinan
-                      ? ` · ${modalSpmLive.salinan} salinan`
-                      : ""}{" "}
-                    · diperbarui{" "}
-                    {new Date(modalSpmLive.waktu).toLocaleTimeString("id-ID", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                    })}
-                  </>
-                ) : null}
-              </div>
-            )}
+
             <div className="modal-body" style={{ padding: 0 }}>
               {modalSpm.baris.length === 0 &&
               !(modalSpm.pdf || []).length &&
@@ -3483,6 +3450,7 @@ export default function DataKegiatan({ periode = null }) {
                                         target="_blank"
                                         rel="noreferrer"
                                         title={b.nama || b.uraian}
+                                        className="dk-btn-pdf"
                                       >
                                         {formatNoSpm(b.no)}
                                       </a>
@@ -3541,6 +3509,7 @@ export default function DataKegiatan({ periode = null }) {
                               target="_blank"
                               rel="noreferrer"
                               title="Buka PDF di Drive"
+                              className="dk-btn-pdf"
                             >
                               SPM {formatNoSpm(b.spm.noSpm)}
                             </a>
@@ -3557,32 +3526,7 @@ export default function DataKegiatan({ periode = null }) {
                 </>
               )}
 
-              <div className="dk-modal-total">
-                {modalSpm.baris.length > 0 ? (
-                  <>
-                    <strong>{modalSpm.baris.length} SPM</strong> dari tab
-                    spreadsheet <strong>{modalSpm.tab}</strong> · jumlah nilai{" "}
-                    <strong>{formatRupiah(modalSpm.total)}</strong>
-                  </>
-                ) : (
-                  <>
-                    <strong>{(modalSpm.pdf || []).length} berkas SPM PDF</strong>{" "}
-                    di Google Drive
-                    {modalSpm.total > 0 && (
-                      <>
-                        {" "}
-                        · jumlah nilai{" "}
-                        <strong>{formatRupiah(modalSpm.total)}</strong>
-                      </>
-                    )}
-                  </>
-                )}
-                <span className="dk-muted">
-                  {" "}
-                  · sumber: spreadsheet "Rekap SPM kumulatif per bulan" &amp;
-                  berkas PDF di Drive
-                </span>
-              </div>
+
             </div>
             <div
               className="modal-footer"
