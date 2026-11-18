@@ -1271,59 +1271,202 @@ function DaftarDokumen({ data, label, filterBidang }) {
   );
 }
 
-/* ── 5. Embed iframe Google Spreadsheet (data live) ── */
+/* ── 5. Tabel data spreadsheet (read-only, aman dari perubahan) ── */
 function SpreadsheetEmbed({ sheetUrl, gid, label }) {
   const [tampil, setTampil] = useState(true);
+  const [state, setState] = useState({ loading: false, error: null, cols: [], rows: [] });
+
+  const load = React.useCallback(() => {
+    if (!sheetUrl) return;
+    let cancelled = false;
+    setState((s) => ({ ...s, loading: true, error: null }));
+    fetchSheetGviz(sheetUrl, gid, label)
+      .then((json) => {
+        if (cancelled) return;
+        const table = json?.table;
+        const cols = (table?.cols || []).map((c, i) => (c?.label || c?.id || `Kolom ${i + 1}`).trim() || `Kolom ${i + 1}`);
+        const rows = (table?.rows || []).map((r) =>
+          (r?.c || []).map((cell) => {
+            if (!cell) return "";
+            if (cell.f != null && cell.f !== "") return String(cell.f);
+            if (cell.v == null) return "";
+            return String(cell.v);
+          })
+        );
+        setState({ loading: false, error: null, cols, rows });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setState({ loading: false, error: err.message || "Gagal memuat data", cols: [], rows: [] });
+      });
+    return () => { cancelled = true; };
+  }, [sheetUrl, gid, label]);
+
+  useEffect(() => {
+    const cancel = load();
+    return () => { if (typeof cancel === "function") cancel(); };
+  }, [load]);
+
   if (!sheetUrl) return null;
 
-  const embedUrl = getEmbedUrl(sheetUrl, gid);
-  if (!embedUrl) return null;
+  const isEmpty = !state.loading && state.rows.length === 0 && !state.error;
+  const isError = !state.loading && !!state.error;
 
   return (
-    <section style={{ marginBottom: 4 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "20px 0 8px", flexWrap: "wrap", gap: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: 7 }}>
-          <span>📊</span>
-          <span>Data Spreadsheet Live — <span style={{ color: "#1d4ed8" }}>{label}</span></span>
-        </h3>
-        <button
-          onClick={() => setTampil((v) => !v)}
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 5,
-            padding: "4px 12px", fontSize: 12, fontWeight: 600,
-            background: tampil ? "#eff6ff" : "#f1f5f9",
-            color: tampil ? "#1d4ed8" : "#64748b",
-            border: "1px solid #dbeafe", borderRadius: 6, cursor: "pointer"
-          }}
-        >
-          {tampil ? "▲ Sembunyikan" : "▼ Tampilkan Spreadsheet"}
-        </button>
+    <section style={{ marginBottom: 24 }}>
+      {/* Header aksi */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "16px 0 10px", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 16 }}>📊</span>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#0f172a" }}>
+              Data Spreadsheet (Tabel) — <span style={{ color: "#1d4ed8" }}>{label}</span>
+            </h3>
+            <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>
+              Sumber: Google Spreadsheet (read-only)
+            </p>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={load}
+            disabled={state.loading}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "7px 14px", fontSize: 12.5, fontWeight: 600,
+              background: "#f1f5f9", color: "#334155",
+              border: "1px solid #e2e8f0", borderRadius: 7, cursor: state.loading ? "default" : "pointer"
+            }}
+            title="Muat ulang data dari Google Spreadsheet"
+          >
+            {state.loading ? "Memuat…" : "Muat Ulang"}
+          </button>
+          <button
+            onClick={() => setTampil((v) => !v)}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "7px 14px", fontSize: 12.5, fontWeight: 600,
+              background: tampil ? "#eff6ff" : "#f1f5f9",
+              color: tampil ? "#1d4ed8" : "#64748b",
+              border: `1px solid ${tampil ? "#dbeafe" : "#e2e8f0"}`, borderRadius: 7, cursor: "pointer"
+            }}
+          >
+            {tampil ? "▲ Sembunyikan Tabel" : "▼ Tampilkan Tabel"}
+          </button>
+        </div>
       </div>
+
       {tampil && (
         <div style={{
-          border: "1.5px solid #dbeafe", borderRadius: 10,
-          overflow: "hidden", background: "#f8fafc",
-          boxShadow: "0 2px 8px rgba(29,78,216,0.07)"
+          border: "1px solid #e2e8f0", borderRadius: 10,
+          overflow: "hidden", background: "#fff",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
         }}>
+          {/* Badge status baca */}
           <div style={{
-            padding: "6px 14px", background: "#eff6ff", borderBottom: "1px solid #dbeafe",
-            display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "#1d4ed8", fontWeight: 600
+            padding: "8px 14px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0",
+            display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "#475569", fontWeight: 600, flexWrap: "wrap"
           }}>
-            <span>🔗</span>
-            <span>Data ditampilkan langsung dari Google Spreadsheet</span>
-            <a href={sheetUrl} target="_blank" rel="noopener noreferrer"
-              style={{ marginLeft: "auto", color: "#1d4ed8", fontWeight: 700, fontSize: 11, textDecoration: "none",
-                padding: "2px 8px", background: "#dbeafe", borderRadius: 4 }}
-            >
-              Buka di Google Sheets ↗
-            </a>
+            <span>🔒</span>
+            <span>Data ditampilkan sebagai tabel read-only (tidak dapat diubah dari halaman ini)</span>
+            {state.cols.length > 0 && (
+              <span style={{ marginLeft: "auto", fontSize: 11, color: "#94a3b8" }}>
+                {state.cols.length} kolom • {state.rows.length} baris
+              </span>
+            )}
           </div>
-          <iframe
-            src={embedUrl}
-            title={`Spreadsheet ${label}`}
-            style={{ width: "100%", height: 520, border: "none", display: "block" }}
-            loading="lazy"
-          />
+
+          {/* Error state */}
+          {isError && (
+            <div style={{ padding: 20, color: "#b91c1c", fontSize: 13, textAlign: "center" }}>
+              ⚠️ Gagal memuat data spreadsheet: {state.error}
+            </div>
+          )}
+
+          {/* Empty state */}
+          {isEmpty && (
+            <div style={{ padding: 30, color: "#64748b", fontSize: 13, textAlign: "center" }}>
+              Tidak ada data yang ditampilkan pada tabel ini.
+            </div>
+          )}
+
+          {/* Tabel data */}
+          {!state.error && state.cols.length > 0 && (
+            <div className="vt-table-wrapper" style={{ maxHeight: 520, overflow: "auto", margin: 0 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, color: "#334155", tableLayout: "auto" }}>
+                <thead>
+                  <tr>
+                    <th style={{
+                      width: 40, padding: "8px 6px", textAlign: "center", fontWeight: 700,
+                      color: "#475569", background: "#f8fafc", borderBottom: "2px solid #e2e8f0",
+                      borderRight: "1px solid #e2e8f0", fontSize: 11.5, whiteSpace: "nowrap"
+                    }}>No</th>
+                    {state.cols.map((col, i) => (
+                      <th
+                        key={i}
+                        style={{
+                          padding: "8px 10px", textAlign: "left", fontWeight: 700,
+                          color: "#475569", background: "#f8fafc", borderBottom: "2px solid #e2e8f0",
+                          borderRight: "1px solid #e2e8f0", fontSize: 11.5, whiteSpace: "normal"
+                        }}
+                      >
+                        {col || `Kolom ${i + 1}`}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {!state.loading && state.rows.map((row, ri) => {
+                    const isOdd = ri % 2 === 0;
+                    return (
+                      <tr
+                        key={ri}
+                        style={{
+                          borderBottom: "1px solid #f1f5f9",
+                          background: isOdd ? "#ffffff" : "#fafbfc"
+                        }}
+                      >
+                        <td style={{
+                          padding: "7px 6px", textAlign: "center", fontWeight: 700,
+                          color: "#94a3b8", borderRight: "1px solid #f1f5f9", fontSize: 12,
+                          whiteSpace: "nowrap"
+                        }}>
+                          {ri + 1}
+                        </td>
+                        {state.cols.map((_, ci) => {
+                          const val = row[ci] ?? "";
+                          const isNum = /^-?\d{1,3}(\.\d{3})*(,\d+)?$/.test(val) || /^-?\d+(\.\d+)?$/.test(val);
+                          return (
+                            <td
+                              key={ci}
+                              style={{
+                                padding: "7px 10px", borderRight: "1px solid #f1f5f9",
+                                fontSize: 12.5, whiteSpace: "pre-wrap",
+                                textAlign: isNum ? "right" : "left",
+                                color: isNum ? "#1e293b" : "#334155",
+                                fontWeight: isNum ? 600 : 500,
+                                lineHeight: 1.4
+                              }}
+                            >
+                              {val === "" ? <span style={{ color: "#cbd5e1", fontStyle: "italic" }}>—</span> : val}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Loading state */}
+          {state.loading && (
+            <div style={{ padding: 20, display: "flex", alignItems: "center", gap: 10, color: "#64748b", fontSize: 13 }}>
+              <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid #e2e8f0", borderTopColor: "#1d4ed8", borderRadius: "50%", animation: "vtSpin 0.8s linear infinite" }}></span>
+              Memuat data dari spreadsheet…
+            </div>
+          )}
         </div>
       )}
     </section>

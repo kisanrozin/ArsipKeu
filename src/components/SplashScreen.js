@@ -1,5 +1,4 @@
 import React from "react";
-import { TAHUN_ANGGARAN_AKTIF } from "../data/masterData";
 
 /* ══════════════════════════════════════════════════════════════
    SPLASH SCREEN (LAYAR SAMBUTAN)
@@ -64,17 +63,14 @@ export default function SplashScreen({ onMasuk }) {
 
       <div className="splash-content">
         <h1 className="splash-title">
-          Selamat Datang di Realisasi
-          <br />
-          Anggaran TA {TAHUN_ANGGARAN_AKTIF}
+          Selamat Datang di Sistem Arsip&nbsp;Digital
         </h1>
 
-        <p className="splash-subtitle">Dashboard Manajemen Realisasi Anggaran</p>
+        <p className="splash-subtitle">Pengelolaan Arsip yang Terintegrasi dan Efisien</p>
 
         <p className="splash-desc">
-          Pantau realisasi anggaran Anda dengan dashboard yang komprehensif dan
-          real-time. Akses data kegiatan, analisis persentase realisasi, dan
-          kelola anggaran dengan mudah.
+          Akses, telusuri, dan kelola dokumen arsip secara mudah, cepat, aman,
+          dan terstruktur melalui satu platform digital.
         </p>
 
         <button

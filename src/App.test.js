@@ -6,7 +6,7 @@ test('layar sambutan tampil dulu, lalu tombol masuk membuka aplikasi', async () 
 
   // 1. Sebelum masuk, yang tampil adalah layar sambutan (splash).
   expect(
-    screen.getByText(/Selamat Datang di Realisasi/i)
+    screen.getByText(/Selamat Datang di Sistem Arsip Digital/i)
   ).toBeInTheDocument();
 
   // 2. Tekan "Masuk ke Dashboard" → splash ditutup.

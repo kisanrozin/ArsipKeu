@@ -134,6 +134,16 @@ function normalNoSpm(no) {
   return digit ? String(Number(digit)) : "";
 }
 
+/* Tampilkan Nomor SPM tanpa nol di depan supaya mudah terbaca,
+   mis. "00006T" → "6T", "00006" → "6". Huruf di akhir dipertahankan.
+   Dipakai hanya untuk penampilan (bukan untuk pencocokan data). */
+function formatNoSpm(no) {
+  if (!no || no === "—") return "—";
+  const m = String(no).match(/^(\d+)(.*)$/);
+  if (!m) return no;
+  return Number(m[1]) + m[2];
+}
+
 /* Tanggal hari ini menurut waktu lokal (WIB/WITA/WIT), bukan UTC —
    `toISOString()` bisa menyimpang satu hari pada pagi hari. */
 function tanggalHariIni() {
@@ -195,6 +205,12 @@ const NAMA_BULAN_ID = [
   "Juli", "Agustus", "September", "Oktober", "November", "Desember",
 ];
 
+/* Nama bulan singkat untuk label batang sparkline filter. */
+const NAMA_BULAN_SINGKAT = [
+  "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+  "Jul", "Agu", "Sep", "Okt", "Nov", "Des",
+];
+
 function labelBulan(ym) {
   const cocok = String(ym || "").match(/^(\d{4})-(\d{2})$/);
   if (!cocok) return ym || "—";
@@ -216,18 +232,15 @@ function labelPeriodeBulan(dari, sampai) {
 /* Periode dari beranda ({ tahun, bulan: "juli" }) → rentang kumulatif
    Januari s.d. bulan terpilih: { dari: "2026-01", sampai: "2026-07" }.
    Angka "Realisasi Bulan" di beranda memang kumulatif sejak Januari,
-   jadi filter di Data Kegiatan memakai rentang yang sama (bukan hanya
-   bulan itu saja). Nilai kosong/tidak valid → null. */
+   jadi filter di Data Kegiatan memakai rentang yang sama. Nilai kosong/tidak valid → null. */
 function rentangDariPeriode(periode) {
   const tahun = String((periode && periode.tahun) || "").trim();
   const nomor = nomorBulanDariId(periode && periode.bulan);
   if (!/^\d{4}$/.test(tahun) || !nomor) return null;
-  /* Filter per-bulan saja (bukan kumulatif Januari s.d. bulan terpilih):
-     dari dan sama sama menunjuk bulan yang dipilih di beranda. */
-  const ym = `${tahun}-${String(nomor).padStart(2, "0")}`;
+  const sampai = `${tahun}-${String(nomor).padStart(2, "0")}`;
   return {
-    dari: ym,
-    sampai: ym,
+    dari: `${tahun}-01`,
+    sampai,
   };
 }
 
@@ -1000,28 +1013,37 @@ export default function DataKegiatan({ periode = null }) {
   /* Filter periode yang dipilih di beranda ("Realisasi Data Per Bulan")
      dipakai sebagai nilai awal filter bulan di halaman ini, lalu tetap
      diperbarui bila pengguna mengganti filter tahun/bulan di beranda.
-     Filter per-bulan saja: hanya field "sampai" (bulan yang dipilih). */
+     Filter bersifat KUMULATIF: dari Januari s.d. bulan terpilih,
+     sesuai tab rekap kumulatif di spreadsheet. */
   const rentangBeranda = useMemo(
     () => rentangDariPeriode(periode),
     [periode]
   );
+  const dariBeranda = rentangBeranda ? rentangBeranda.dari : "";
   const sampaiBeranda = rentangBeranda ? rentangBeranda.sampai : "";
   const [draft, setDraft] = useState(() => ({
     cari: "",
+    dari: dariBeranda,
     sampai: sampaiBeranda,
   }));
   const [applied, setApplied] = useState(() => ({
     cari: "",
+    dari: dariBeranda,
     sampai: sampaiBeranda,
   }));
 
-  /* Periode dari beranda berubah → ganti filter bulan "sampai" tanpa
+  /* Periode dari beranda berubah → ganti rentang kumulatif tanpa
      menghapus kata kunci pencarian. */
   useEffect(() => {
     if (!sampaiBeranda) return;
-    setDraft((d) => (d.sampai === sampaiBeranda ? d : { ...d, sampai: sampaiBeranda }));
-    setApplied((a) => (a.sampai === sampaiBeranda ? a : { ...a, sampai: sampaiBeranda }));
-  }, [sampaiBeranda]);
+    const next = { dari: dariBeranda, sampai: sampaiBeranda };
+    setDraft((d) =>
+      d.dari === next.dari && d.sampai === next.sampai ? d : { ...d, ...next }
+    );
+    setApplied((a) =>
+      a.dari === next.dari && a.sampai === next.sampai ? a : { ...a, ...next }
+    );
+  }, [dariBeranda, sampaiBeranda]);
 
   const [modalTambah, setModalTambah] = useState(false);
   /* Modal daftar bukti laporan SPM (tombol ringkas di kolom Bukti Kerja
@@ -1168,6 +1190,7 @@ export default function DataKegiatan({ periode = null }) {
   // laporan SPM-nya langsung terlihat tanpa perlu klik induk/cabang.
   const [terbuka, setTerbuka] = useState({});
   const [semuaBuka, setSemuaBuka] = useState(true);
+  const [tampilkanSpark, setTampilkanSpark] = useState(true);
 
   const isOpen = useCallback(
     (node) =>
@@ -1476,7 +1499,7 @@ export default function DataKegiatan({ periode = null }) {
   }, []);
 
   /* ── Realisasi SPM dari spreadsheet rekap bulanan ───────────
-     Bulan patokan diambil dari batas AKHIR filter "Bulan"/"s.d." di
+     Bulan patokan diambil dari batas AKHIR filter kumulatif "s.d." di
      toolbar (format YYYY-MM). Kalau bulan itu belum punya tab di
      spreadsheet, datanya dianggap KOSONG ("—") — tidak menyalin angka
      bulan sebelumnya. Kalau filter kosong, pakai bulan terakhir yang
@@ -1486,10 +1509,8 @@ export default function DataKegiatan({ periode = null }) {
     const perBulan = (rekapSpm && rekapSpm.perBulan) || {};
     const dariSampai = bulanIdDariYm(applied.sampai);
     if (dariSampai) return perBulan[dariSampai] ? dariSampai : null;
-    const dariDari = bulanIdDariYm(applied.sampai);
-    if (dariDari) return perBulan[dariDari] ? dariDari : null;
     return bulanTerakhirDenganData(rekapSpm);
-  }, [rekapSpm, applied.sampai, applied.sampai]);
+  }, [rekapSpm, applied.sampai]);
 
   const rekapSpmBulan = useMemo(
     () => rekapRealisasiSpm(rekapSpm, TAHUN_ANGGARAN_AKTIF, bulanRekapSpm),
@@ -1559,13 +1580,13 @@ export default function DataKegiatan({ periode = null }) {
   }, [ledgerSpm, nomorBulanRekap]);
 
 
-  /* Baris ledger yang SESUAI filter bulan (dari–sampai) — inilah yang
+  /* Baris ledger yang SESUAI filter kumulatif (dari–sampai) — inilah yang
      ditampilkan langsung di kolom Bukti Kerja. Tanpa filter → seluruh
      baris kumulatif tab. */
   const ledgerTerpilihIndex = useMemo(() => {
     const peta = new Map();
     if (!ledgerSpm) return peta;
-    const dari = applied.sampai;
+    const dari = applied.dari;
     const sampai = applied.sampai;
     ledgerSpm.per.forEach((blok, kode) => {
       const rows =
@@ -1587,7 +1608,7 @@ export default function DataKegiatan({ periode = null }) {
       if (!peta.has(k)) peta.set(k, isi);
     });
     return peta;
-  }, [ledgerSpm, applied.sampai, applied.sampai]);
+  }, [ledgerSpm, applied.dari, applied.sampai]);
 
   const ledgerTerpilihPilih = useCallback(
     (kode) => {
@@ -1631,16 +1652,15 @@ export default function DataKegiatan({ periode = null }) {
   const buktiPerRekening = useMemo(() => {
     const peta = new Map(); // kunciKode(kegiatan) → Map(rekening → …)
     if (!ledgerSpm) return peta;
+    const dari = applied.dari;
+    const sampai = applied.sampai;
     ledgerSpm.per.forEach((blok, kode) => {
       const rows =
-        applied.sampai || applied.sampai
+        dari || sampai
           ? blok.rows.filter((r) => {
               const ym = r.tanggal ? String(r.tanggal).slice(0, 7) : null;
               if (!ym) return false;
-              return (
-                (!applied.sampai || ym >= applied.sampai) &&
-                (!applied.sampai || ym <= applied.sampai)
-              );
+              return (!dari || ym >= dari) && (!sampai || ym <= sampai);
             })
           : blok.rows;
       if (!rows.length) return;
@@ -1660,8 +1680,8 @@ export default function DataKegiatan({ periode = null }) {
       });
     });
     return peta;
-  }, [ledgerSpm, applied.sampai, applied.sampai]);
-  const filterBulanAktif = Boolean(applied.sampai || applied.sampai);
+  }, [ledgerSpm, applied.dari, applied.sampai]);
+  const filterBulanAktif = Boolean(applied.dari || applied.sampai);
   /* ── Terapkan filter ────────────────────────────────────── */
   const tabelRows = useMemo(() => {
     const q = applied.cari.trim();
@@ -1704,11 +1724,11 @@ export default function DataKegiatan({ periode = null }) {
          laporan SPM per kode kegiatan tidak hilang dari tabel.
          Baris tanpa berkas (mis. input manual) tetap dibandingkan
          lewat tanggal barisnya. */
-      if (!applied.sampai && !applied.sampai) return true;
+      if (!applied.dari && !applied.sampai) return true;
 
       const dalamRentang = (ym) =>
         !!ym &&
-        (!applied.sampai || ym >= applied.sampai) &&
+        (!applied.dari || ym >= applied.dari) &&
         (!applied.sampai || ym <= applied.sampai);
 
       const bulanBerkas = (r.berkas || [])
@@ -1745,7 +1765,7 @@ export default function DataKegiatan({ periode = null }) {
          seluruh tahun. */
       if (r.realisasiPerBulan && Object.keys(r.realisasiPerBulan).length) {
         return Object.entries(r.realisasiPerBulan).reduce((total, [ym, n]) => {
-          if (applied.sampai && ym < applied.sampai) return total;
+          if (applied.dari && ym < applied.dari) return total;
           if (applied.sampai && ym > applied.sampai) return total;
           return total + (Number(n) || 0);
         }, 0);
@@ -1753,7 +1773,7 @@ export default function DataKegiatan({ periode = null }) {
       const v = realisasiLedger.get(kunciKode(r.kode));
       return typeof v === "number" ? v : r.realisasi || 0;
     },
-    [realisasiLedger, applied.sampai, applied.sampai]
+    [realisasiLedger, applied.dari, applied.sampai]
   );
 
   /* ── Pohon hierarkis (kode induk → cabang → detail → akun) ── */
@@ -1761,9 +1781,46 @@ export default function DataKegiatan({ periode = null }) {
     () => bangunPohon(tabelRows, rekapSheetData, realisasiBaris),
     [tabelRows, rekapSheetData, realisasiBaris]
   );
+  /* Tampilan Tree View saat difilter: langsung dari Kode Kegiatan ke
+     Kode Akun Belanja (contoh: 7769.AFA.001.100.A → 521211, 522111, dst.),
+     tanpa level induk/cabang/detail di atasnya. Hanya kode akun belanja
+     yang memiliki berkas/bukti sesuai spreadsheet (ledger SPM periode)
+     yang ditampilkan. Bila belum difilter, struktur pohon tetap seperti
+     sebelumnya. */
+  const pohonFilterTampil = useMemo(() => {
+    const keluar = [];
+    const ambilKegiatan = (nodes) => {
+      (nodes || []).forEach((n) => {
+        if (n.tipe === "kegiatan") {
+          const per = buktiPerRekening.get(kunciKode(n.kode || n.induk || ""));
+          const akun = (n.children || [])
+            .filter((c) => c.tipe === "akun")
+            .filter((c) => {
+              if (!per) return false;
+              const e = per.get(String(c.kode || "").trim());
+              return e && (Number(e.jumlah) || 0) > 0;
+            })
+            .map((c) => ({ ...c, depth: 1 }));
+          if (akun.length > 0) {
+            keluar.push({
+              ...n,
+              depth: 0,
+              children: akun,
+            });
+          }
+          return;
+        }
+        if (n.children && n.children.length) ambilKegiatan(n.children);
+      });
+    };
+    ambilKegiatan(pohon);
+    return keluar;
+  }, [pohon, buktiPerRekening]);
+  const sedangDifilter = Boolean(applied.cari.trim() || applied.dari || applied.sampai);
+  const pohonTampilAktif = sedangDifilter ? pohonFilterTampil : pohon;
   const barisTampil = useMemo(
-    () => flattenPohon(pohon, isOpen),
-    [pohon, isOpen]
+    () => flattenPohon(pohonTampilAktif, isOpen),
+    [pohonTampilAktif, isOpen]
   );
 
   const bukaSemua = () => {
@@ -1780,7 +1837,7 @@ export default function DataKegiatan({ periode = null }) {
           kumpulkan(n.children);
         }
       });
-    kumpulkan(pohon);
+    kumpulkan(pohonTampilAktif);
     setSemuaBuka(false);
     setTerbuka(kunci.reduce((a, k) => ({ ...a, [k]: false }), {}));
   };
@@ -1806,7 +1863,24 @@ export default function DataKegiatan({ periode = null }) {
     return total;
   })();
   const totalRealisasi = tabelRows.reduce((s, r) => s + realisasiBaris(r), 0);
-  const totalBerkas = tabelRows.reduce((s, r) => s + (r.jumlahBerkas || 0), 0);
+  const totalBerkas = useMemo(() => {
+    const filterAktif = Boolean(applied.dari || applied.sampai);
+    return tabelRows.reduce((s, r) => {
+      if (!filterAktif) return s + (r.jumlahBerkas || 0);
+      if (Array.isArray(r.berkas) && r.berkas.length > 0) {
+        const dalamRentang = r.berkas.filter((b) => {
+          const ym = bulanIso(b && b.spm ? b.spm.tanggal : null);
+          return (
+            !!ym &&
+            (!applied.dari || ym >= applied.dari) &&
+            (!applied.sampai || ym <= applied.sampai)
+          );
+        }).length;
+        return s + dalamRentang;
+      }
+      return s + (r.jumlahBerkas || 0);
+    }, 0);
+  }, [tabelRows, applied.dari, applied.sampai]);
 
   /* ── Ringkasan bulan untuk kotak filter ─────────────────────
      Supaya jelas "data mana yang terhubung" dengan bulan yang
@@ -1886,6 +1960,40 @@ export default function DataKegiatan({ periode = null }) {
       .sort((a, b) => a.bulan.localeCompare(b.bulan));
   }, [semuaRows]);
 
+  /* Data semua 12 bulan untuk sparkline filter: gabungkan bulan yang
+     punya data dengan bulan kosong (jumlah 0), supaya batang tampil
+     lengkap dari Januari sampai Desember. Tahun diambil dari filter
+     aktif (applied.sampai) atau dari bulan pertama yang punya data,
+     atau tahun sekarang sebagai cadangan. */
+  const tahunSpark = useMemo(() => {
+    if (applied.sampai) return String(applied.sampai).slice(0, 4);
+    if (bulanTersedia.length > 0) return String(bulanTersedia[0].bulan).slice(0, 4);
+    return String(new Date().getFullYear());
+  }, [applied.sampai, bulanTersedia]);
+
+  const petaJumlah = useMemo(() => {
+    const p = new Map();
+    bulanTersedia.forEach((b) => p.set(b.bulan, b.jumlah));
+    return p;
+  }, [bulanTersedia]);
+
+  const bulanSemua = useMemo(() => {
+    const hasil = [];
+    for (let i = 1; i <= 12; i++) {
+      const ym = `${tahunSpark}-${String(i).padStart(2, "0")}`;
+      hasil.push({
+        bulan: ym,
+        labelSingkat: NAMA_BULAN_SINGKAT[i - 1],
+        jumlah: petaJumlah.get(ym) || 0,
+      });
+    }
+    return hasil;
+  }, [tahunSpark, petaJumlah]);
+
+  const maxJumlah = useMemo(
+    () => Math.max(...bulanSemua.map((b) => b.jumlah), 1),
+    [bulanSemua]
+  );
 
 
   const ringkasBulan = useMemo(
@@ -1897,23 +2005,24 @@ export default function DataKegiatan({ periode = null }) {
     [tabelRows, totalRealisasi, totalBerkas]
   );
 
-  /* Pilih satu bulan dari chips: bila bulan itu sama dengan filter
-     "sampai" yang aktif (bulan tunggal), klik berikutnya melepasnya. */
+  /* Pilih satu bulan dari chips: kumulatif dari Januari s.d. bulan itu.
+     Klik bulan yang sama melepas filter. */
   const pilihBulan = useCallback((bulan) => {
-    const sudahSama = applied.sampai === bulan;
-    const baru = sudahSama
-      ? { ...applied, sampai: "" }
-      : { ...applied, sampai: bulan };
+    const sudahSama = applied.sampai === bulan && applied.dari === String(bulan || "").slice(0, 4) + "-01";
+    const tahun = String(bulan || "").slice(0, 4);
+    const baru = sudahSama || !bulan
+      ? { ...applied, dari: "", sampai: "" }
+      : { ...applied, dari: `${tahun}-01`, sampai: bulan };
     setDraft(baru);
     setApplied(baru);
   }, [applied]);
 
 
 
-  /* Label periode filter (rentang dari–sampai) — dipakai untuk judul
+  /* Label periode filter (rentang kumulatif dari–sampai) — dipakai untuk judul
      kolom Bukti Kerja, tombol, dan modal bukti laporan SPM. */
   const periodeFilterLabel = filterBulanAktif
-    ? labelPeriodeBulan(applied.sampai, applied.sampai)
+    ? labelPeriodeBulan(applied.dari, applied.sampai)
     : "";
 
   /* Daftar bukti kerja SPM (PDF dari Drive) yang tanggal SPM-nya masuk
@@ -1939,7 +2048,7 @@ export default function DataKegiatan({ periode = null }) {
      ringkasan di atas tabel. */
   const ledgerBarisPeriode = useMemo(() => {
     if (!ledgerSpm) return [];
-    const dari = applied.sampai;
+    const dari = applied.dari;
     const sampai = applied.sampai;
     const keluar = [];
     ledgerSpm.per.forEach((blok, kode) => {
@@ -1953,7 +2062,7 @@ export default function DataKegiatan({ periode = null }) {
       });
     });
     return keluar;
-  }, [ledgerSpm, applied.sampai, applied.sampai]);
+  }, [ledgerSpm, applied.dari, applied.sampai]);
 
   const ledgerPeriodeTotal = useMemo(
     () => ledgerBarisPeriode.reduce((s, r) => s + (r.nilai || 0), 0),
@@ -1985,7 +2094,7 @@ export default function DataKegiatan({ periode = null }) {
       if (daftar.length) peta.set(r.kode, daftar);
     });
     return peta;
-  }, [semuaRows, applied.sampai, applied.sampai]);
+  }, [semuaRows, applied.dari, applied.sampai]);
 
 
 
@@ -2103,14 +2212,12 @@ export default function DataKegiatan({ periode = null }) {
   }, [tabelRows, ledgerTerpilihPilih, berkasPerKegiatan, applied.cari]);
 
   const adaFilter =
-    Boolean(applied.cari || applied.sampai || applied.sampai) ||
-    Boolean(draft.cari || draft.sampai || draft.sampai);
+    Boolean(applied.cari || applied.dari || applied.sampai) ||
+    Boolean(draft.cari || draft.dari || draft.sampai);
 
-  /* Mode tabel datar aktif bila filter benar-benar dipakai (applied) —
-     saat filter dikosongkan, tampilan kembali ke mode pohon. */
-  const filterTabelDatar = Boolean(
-    applied.cari.trim() || applied.sampai || applied.sampai
-  );
+  /* Saat difilter, tetap tampilkan dalam Tree View seperti sebelum difilter
+     (hierarki induk → cabang → detail → kegiatan). */
+  const filterTabelDatar = false;
 
   /* Reset form + hasil impor saat modal ditutup. */
   const resetFormTambah = useCallback(() => {
@@ -2473,12 +2580,6 @@ export default function DataKegiatan({ periode = null }) {
       <div className="page-header dk-header">
         <div>
           <h2>Data Kegiatan &amp; Anggaran</h2>
-          <p>
-            Pagu, realisasi, dan bukti kerja setiap kegiatan — sumber data: Google
-            Drive (folder SPJ), dipecah berjenjang sesuai alur digital:{" "}
-            <strong>Kode Induk → Kode Cabang → Kode Detail → Kode Kegiatan → Kode
-            Akun Belanja</strong>. Klik tanda untuk membuka rinciannya.
-          </p>
         </div>
         <div className="dk-header-badges">
           {!isAdmin && (
@@ -2486,14 +2587,14 @@ export default function DataKegiatan({ periode = null }) {
               👁 Mode Tamu · baca saja
             </span>
           )}
-          <div className="dk-live-badge">
-            <span className="dk-live-dot" />
-            {loading
-              ? `Mengambil data… ${progress}/${rows.length || "?"}`
-              : menyegarkan
-              ? `Menyegarkan dari Drive… ${progress}/${rows.length || "?"}`
-              : `Google Drive · ${semuaRows.length} kegiatan`}
-          </div>
+          {(loading || menyegarkan) && (
+            <div className="dk-live-badge">
+              <span className="dk-live-dot" />
+              {loading
+                ? `Mengambil data… ${progress}/${rows.length || "?"}`
+                : `Menyegarkan dari Drive… ${progress}/${rows.length || "?"}`}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2517,19 +2618,24 @@ export default function DataKegiatan({ periode = null }) {
             onKeyDown={(e) => e.key === "Enter" && setApplied(draft)}
           />
           <label className="dk-date-wrap">
-            <span className="dk-date-label">Bulan</span>
+            <span className="dk-date-label">Kumulatif s.d.</span>
             <input
               type="month"
               className="dk-input dk-input-date"
               value={draft.sampai}
-              onChange={(e) => setDraft({ ...draft, sampai: e.target.value })}
+              onChange={(e) => {
+                const sampai = e.target.value;
+                const tahun = String(sampai || "").slice(0, 4);
+                const dari = /^\d{4}$/.test(tahun) ? `${tahun}-01` : "";
+                setDraft({ ...draft, dari, sampai });
+              }}
             />
           </label>
           <button
             type="button"
             className="dk-btn dk-btn-filter"
             onClick={() => setApplied(draft)}
-            title="Terapkan filter"
+            title="Terapkan filter kumulatif (Januari s.d. bulan terpilih)"
           >
             🔍 Filter
           </button>
@@ -2537,7 +2643,7 @@ export default function DataKegiatan({ periode = null }) {
             type="button"
             className="dk-btn dk-btn-clear"
             onClick={() => {
-              const kosong = { cari: "", sampai: "" };
+              const kosong = { cari: "", dari: "", sampai: "" };
               setDraft(kosong);
               setApplied(kosong);
             }}
@@ -2581,103 +2687,78 @@ export default function DataKegiatan({ periode = null }) {
           jelas data mana yang terhubung dengan bulan yang dipilih. */}
       {(bulanTersedia.length > 0 || filterBulanAktif) && (
         <div className="dk-filter-bulan">
-          <div className="dk-filter-bulan-chips">
-            <span className="dk-filter-bulan-lead">Bulan dengan data:</span>
-            {bulanTersedia.length === 0 ? (
-              <span className="dk-kosong">
-                Belum ada data bertanggal untuk dipetakan ke bulan.
-              </span>
-            ) : (
-              bulanTersedia.map((b) => {
-                const aktif = applied.sampai === b.bulan && applied.sampai === b.bulan;
-                return (
-                  <button
-                    key={b.bulan}
-                    type="button"
-                    className={`dk-chip-bulan${aktif ? " dk-chip-bulan-aktif" : ""}`}
-                    onClick={() => pilihBulan(b.bulan)}
-                    title={`${b.jumlah} kegiatan · ${formatRupiah(b.realisasi)} · ${b.berkas} berkas${
-                      aktif ? " · klik untuk melepas filter bulan ini" : " · klik untuk memfilter bulan ini"
-                    }`}
-                  >
-                    {labelBulan(b.bulan)}
-                    <span className="dk-chip-count">{b.jumlah}</span>
-                  </button>
-                );
-              })
+          <div className="dk-spark-card">
+            <div className="dk-spark-header">
+              <span className="dk-spark-icon">📅</span>
+              <span className="dk-spark-title">Filter Bulan ({tahunSpark})</span>
+              {filterBulanAktif && (
+                <span className="dk-spark-badge">Aktif: {labelPeriodeBulan(applied.dari, applied.sampai)}</span>
+              )}
+              <button
+                type="button"
+                className="dk-spark-toggle"
+                onClick={() => setTampilkanSpark(!tampilkanSpark)}
+                title={tampilkanSpark ? "Sembunyikan grafik" : "Tampilkan grafik"}
+              >
+                {tampilkanSpark ? "▲" : "▼"}
+              </button>
+            </div>
+            {tampilkanSpark && (
+              <>
+                <div className="dk-spark-bars">
+                  {bulanSemua.map((b) => {
+                    const aktif =
+                      filterBulanAktif && applied.sampai === b.bulan;
+                    const pct = maxJumlah > 0 ? (b.jumlah / maxJumlah) * 100 : 0;
+                    const ada = b.jumlah > 0;
+                    /* Warna batang bergantung pada tinggi (heatmap):
+                       rendah = hijau, sedang = biru, tinggi = ungu muda. */
+                    let warnaBar = "#3b82f6";
+                    if (pct > 0) {
+                      if (pct < 33) warnaBar = "#10b981";      /* hijau */
+                      else if (pct < 66) warnaBar = "#3b82f6"; /* biru */
+                      else warnaBar = "#8b5cf6";               /* ungu */
+                    }
+                    return (
+                      <button
+                        key={b.bulan}
+                        type="button"
+                        className={`dk-spark-bulan${aktif ? " dk-spark-bulan-aktif" : ""}${!ada ? " dk-spark-bulan-kosong" : ""}`}
+                        onClick={() => pilihBulan(b.bulan)}
+                        disabled={!ada}
+                        title={
+                          ada
+                            ? `${b.labelSingkat} ${tahunSpark}: ${b.jumlah} kegiatan · ${formatRupiah(
+                                petaJumlah.get(b.bulan) || 0
+                              )} · klik ${aktif ? "untuk melepas" : "untuk menampilkan kumulatif s.d. bulan ini"}`
+                            : `${b.labelSingkat} ${tahunSpark}: tidak ada data`
+                        }
+                      >
+                        <div className="dk-spark-bar-wrap">
+                          <div
+                            className="dk-spark-bar"
+                            style={{ height: `${pct}%`, background: warnaBar }}
+                          />
+                          {ada && pct > 0 && (
+                            <div className="dk-spark-dot" />
+                          )}
+                        </div>
+                        <span className="dk-spark-label">{b.labelSingkat}</span>
+                        <span className="dk-spark-jumlah">({b.jumlah})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="dk-spark-footer">
+                  <span className="dk-spark-keterangan">
+                    Tinggi batang = banyaknya kegiatan di bulan tersebut · klik batang untuk filter kumulatif Januari s.d. bulan yang dipilih
+                  </span>
+                </div>
+              </>
             )}
           </div>
           {filterBulanAktif && (
             <div className="dk-filter-bulan-ringkas">
-              <div className="dk-fbr-baris">
-                <span>
-                  Terhubung ke{" "}
-                  <strong>
-                    {applied.sampai && applied.sampai && applied.sampai !== applied.sampai
-                      ? `${labelBulan(applied.sampai)} – ${labelBulan(applied.sampai)}`
-                      : labelBulan(applied.sampai || applied.sampai)}
-                  </strong>
-                  :
-                </span>
-                <span>
-                  <strong>{ringkasBulan.jumlah}</strong> kegiatan
-                </span>
-                <span>
-                  realisasi <strong>{formatRupiah(ringkasBulan.realisasi)}</strong>
-                </span>
-                <span>
-                  <strong>{ringkasBulan.berkas}</strong> bukti kerja
-                </span>
-                <span>
-                  <strong>{ledgerBarisPeriode.length}</strong> bukti SPM{" "}
-                  · {formatRupiah(ledgerPeriodeTotal)}
-                </span>
-                {ringkasBulan.jumlah === 0 && (
-                  <span className="dk-kosong">
-                    Tidak ada kegiatan bertanggal pada bulan ini.
-                  </span>
-                )}
-              </div>
-
-              {/* Laporan SPM sesuai tab pada spreadsheet
-                  "Rekap SPM kumulatif per bulan". */}
-              <div className="dk-fbr-spm">
-                <span className="dk-fbr-spm-lead">
-                  Laporan SPM (spreadsheet):
-                </span>
-                {laporanSpmBulan.ada || ledgerSpm ? (
-                  <>
-                    <span
-                      title={`Sumber: tab "${ledgerTabNama}" pada spreadsheet "Rekap SPM kumulatif per bulan.xlsx" — jumlah seluruh baris SPM pada tab tersebut`}
-                    >
-                      kumulatif s.d. {laporanSpmBulan.bulanDasar}:{" "}
-                      <strong>
-                        {formatRupiah(
-                          ledgerSpm ? ledgerSpm.total : laporanSpmBulan.total
-                        )}
-                      </strong>
-                    </span>
-                    <span title="Selisih kumulatif bulan ini dengan bulan sebelumnya">
-                      realisasi bulan ini:{" "}
-                      <strong>
-                        {formatRupiah(
-                          ledgerSpm ? ledgerBulanIni.nilai : laporanSpmBulan.bulanIni
-                        )}
-                      </strong>
-                      {ledgerSpm ? ` (${ledgerBulanIni.jumlah} SPM)` : ""}
-                    </span>
-                    <span className="dk-infobar-tag">
-                      {ledgerTabNama || laporanSpmBulan.dasar[laporanSpmBulan.dasar.length - 1].tab}
-                    </span>
-                  </>
-                ) : (
-                  <span className="dk-kosong">
-                    Bulan {labelBulan(applied.sampai || applied.sampai)} belum
-                    punya data di spreadsheet rekap SPM — dianggap kosong.
-                  </span>
-                )}
-              </div>
-
               {/* Daftar bukti kerja SPM (PDF Drive) sesuai bulan terpilih. */}
               <div className="dk-fbr-berkas">
                 <button
@@ -2718,41 +2799,6 @@ export default function DataKegiatan({ periode = null }) {
         <strong>{semuaRows.length}</strong> kegiatan
         {adaFilter && <span className="dk-infobar-tag">Filter aktif</span>}
         <span className="dk-infobar-spacer" />
-        <span>
-          Total Pagu: <strong>{formatRupiah(totalPagu)}</strong>
-        </span>
-        <span>
-          Total Realisasi: <strong>{formatRupiah(totalRealisasi)}</strong>
-          {rekapSheet && <span className="dk-infobar-tag">Spreadsheet</span>}
-        </span>
-        {rekapSheet && (
-          <span title={`Sumber: tab rekap kumulatif terbaru di spreadsheet Drive · ${rekapSheet.rekening} kode rekening`}>
-            Total Rekap Kumulatif:{" "}
-            <strong>{formatRupiah(rekapSheet.total || 0)}</strong>
-          </span>
-        )}
-        {/* Realisasi SPM — live dari spreadsheet rekap bulanan */}
-        <span
-          title={
-            rekapSpmBulan.ada
-              ? `Sumber: spreadsheet "Rekap SPM kumulatif per bulan.xlsx" (folder SPJ) · tab ${
-                  rekapSpmBulan.dasar[rekapSpmBulan.dasar.length - 1].tab
-                } · kumulatif 1 Jan s.d. ${rekapSpmBulan.bulanDasar} ${TAHUN_ANGGARAN_AKTIF}. Angka ini ikut berubah realtime begitu spreadsheetnya diperbarui.`
-              : "Spreadsheet rekap bulanan belum terbaca atau bulan ini belum punya data."
-          }
-        >
-          Realisasi SPM:{" "}
-          {rekapSpmBulan.ada ? (
-            <strong>{formatRupiah(rekapSpmBulan.total)}</strong>
-          ) : (
-            <span className="dk-kosong">—</span>
-          )}
-          {rekapSpmBulan.ada && (
-            <span className="dk-infobar-tag">
-              {rekapSpmBulan.bulanDasar}
-            </span>
-          )}
-        </span>
         <span>
           Bukti Kerja: <strong>{totalBerkas} berkas</strong>
         </span>
@@ -2830,7 +2876,9 @@ export default function DataKegiatan({ periode = null }) {
                     <td className="dk-num">{formatRupiah(b.realisasi)}</td>
                     <td className="dk-tanggal">{isoToTglId(b.tanggal)}</td>
                     <td className="dk-spm-nomor">
-                      {b.spm.length ? b.spm.join(", ") : "—"}
+                      {b.spm.length
+                        ? b.spm.map(formatNoSpm).join(", ")
+                        : "—"}
                     </td>
                     <td className="dk-bukti">
                       {b.jumlahPdf > 0 ? (
@@ -2882,6 +2930,7 @@ export default function DataKegiatan({ periode = null }) {
 
               <th style={{ textAlign: "right", minWidth: 130 }}>Realisasi</th>
               <th style={{ textAlign: "center", width: 110 }}>Tanggal</th>
+              {sedangDifilter && <th style={{ minWidth: 140 }}>No. SPM</th>}
               <th style={{ textAlign: "center", minWidth: 200 }}>
                 Bukti Kerja{filterBulanAktif ? ` · ${periodeFilterLabel}` : ""}
               </th>
@@ -2935,31 +2984,6 @@ export default function DataKegiatan({ periode = null }) {
                           <span className="dk-kegiatan" title={n.nama}>
                             {n.nama}
                           </span>
-                          <span className="dk-sub">
-                            {(() => {
-                              /* Pecahan badge 📎 "N berkas · Rp X" pada
-                                 baris Kegiatan induknya, masuk ke kode
-                                 belanja ini (diharapkan sesuai rekening
-                                 pada baris ledger — sumber badge). */
-                              const per = buktiPerRekening.get(
-                                kunciKode(n.induk)
-                              );
-                              const e = per
-                                ? per.get(String(n.kode).trim())
-                                : null;
-                              return (
-                                `${n.jumlahUnik || 0} SPM unik` +
-                                (n.jumlahSalinan
-                                  ? ` · ${n.jumlahSalinan} salinan`
-                                  : "") +
-                                (e
-                                  ? ` · ${e.jumlah} berkas · ${formatRupiah(
-                                      e.total
-                                    )}`
-                                  : "")
-                              );
-                            })()}
-                          </span>
                         </>
                       ) : (
                         <>
@@ -2980,7 +3004,9 @@ export default function DataKegiatan({ periode = null }) {
                     <td
                       className="dk-num"
                       title={
-                        n.tipe === "kegiatan" && n.sumberRealisasi
+                        sedangDifilter
+                          ? "Sumber: Spreadsheet rekap SPM (sesuai filter kumulatif)"
+                          : n.tipe === "kegiatan" && n.sumberRealisasi
                           ? `Sumber: ${n.sumberRealisasi}` +
                             (n.realisasiBerkas && n.realisasiBerkas !== n.realisasi
                               ? ` · dari nama berkas PDF: ${formatRupiah(n.realisasiBerkas)}`
@@ -2988,9 +3014,64 @@ export default function DataKegiatan({ periode = null }) {
                           : undefined
                       }
                     >
-                      {formatRupiah(n.realisasi)}
+                      {(() => {
+                        if (sedangDifilter) {
+                          if (n.tipe === "akun") {
+                            const per = buktiPerRekening.get(kunciKode(n.induk));
+                            const e = per ? per.get(String(n.kode || "").trim()) : null;
+                            return formatRupiah(e ? e.total || 0 : 0);
+                          }
+                          if (n.tipe === "kegiatan") {
+                            const per = buktiPerRekening.get(kunciKode(n.kode));
+                            let total = 0;
+                            if (per) per.forEach((v) => { total += v.total || 0; });
+                            return formatRupiah(total);
+                          }
+                          return formatRupiah(0);
+                        }
+                        return formatRupiah(n.realisasi);
+                      })()}
                     </td>
-                    <td className="dk-tanggal">{isoToTglId(n.tanggal)}</td>
+                    <td className="dk-tanggal">
+                      {(() => {
+                        if (sedangDifilter) {
+                          if (n.tipe !== "akun") return "—";
+                          const blok = ledgerTerpilihPilih(n.induk);
+                          const rek = String(n.kode || "").trim();
+                          const daftar = blok
+                            ? blok.rows.filter((r) => String(r.rekening || "").trim() === rek)
+                            : [];
+                          const tgl = [...new Set(daftar.map((r) => r.tanggal).filter(Boolean))].sort();
+                          if (tgl.length === 1) return isoToTglId(tgl[0]);
+                          // Jika lebih dari satu tanggal, ditampilkan di bukti laporan PDF agar tabel rapi.
+                          return "—";
+                        }
+                        return isoToTglId(n.tanggal);
+                      })()}
+                    </td>
+                    {sedangDifilter && (
+                      <td className="dk-spm-nomor">
+                        {(() => {
+                          if (n.tipe === "akun") {
+                            const blok = ledgerTerpilihPilih(n.induk);
+                            const rek = String(n.kode || "").trim();
+                            const daftar = blok
+                              ? blok.rows.filter((r) => String(r.rekening || "").trim() === rek)
+                              : [];
+                            const nos = [...new Set(daftar.map((r) => r.noSpm).filter(Boolean))];
+                            return nos.length ? nos.map(formatNoSpm).join(", ") : "—";
+                          }
+                          if (n.tipe === "kegiatan") {
+                            const blok = ledgerTerpilihPilih(n.kode);
+                            const nos = blok
+                              ? [...new Set(blok.rows.map((r) => r.noSpm).filter(Boolean))]
+                              : [];
+                            return nos.length ? nos.map(formatNoSpm).join(", ") : "—";
+                          }
+                          return "—";
+                        })()}
+                      </td>
+                    )}
                     <td className="dk-bukti">
                       {(() => {
                         /* Tombol ringkas → modal berisi tabel bukti laporan
@@ -3230,7 +3311,7 @@ export default function DataKegiatan({ periode = null }) {
               })
             ) : (
               <tr>
-                <td colSpan={6} className="dk-empty">
+                <td colSpan={sedangDifilter ? 7 : 6} className="dk-empty">
                   {loading
                     ? "Mengambil data kegiatan dari Google Drive..."
                     : adaFilter
@@ -3245,17 +3326,6 @@ export default function DataKegiatan({ periode = null }) {
       </div>
 
       {error && <div className="alert alert-danger dk-alert">{error}</div>}
-
-      <p className="dk-hint">
-        Kode dipangkas berjenjang seperti alur digital: <code>7769</code> (kode
-        induk) → <code>7769.AFA</code> (kode cabang) →{" "}
-        <code>7769.AFA.001.100</code> (kode detail) → kode kegiatan →{" "}
-        <code>521211</code> (kode akun belanja). Pagu diisi manual di{" "}
-        <code>src/data/masterData.js → PAGU_KEGIATAN</code> (kunci = kode
-        kegiatan lengkap). Realisasi &amp; bukti kerja dibaca langsung dari nama
-        berkas SPM di Google Drive (
-        <code>SPM [no]_[rekening]_[tanggal]_[nilai]</code>).
-      </p>
 
       {/* ── Modal: bukti laporan SPM ── */}
       {modalSpm && (
@@ -3414,10 +3484,10 @@ export default function DataKegiatan({ periode = null }) {
                                         rel="noreferrer"
                                         title={b.nama || b.uraian}
                                       >
-                                        {b.no}
+                                        {formatNoSpm(b.no)}
                                       </a>
                                     ) : (
-                                      b.no
+                                      formatNoSpm(b.no)
                                     )}
                                   </td>
                                   {!modalSpm.kode && (
@@ -3472,7 +3542,7 @@ export default function DataKegiatan({ periode = null }) {
                               rel="noreferrer"
                               title="Buka PDF di Drive"
                             >
-                              SPM {b.spm.noSpm}
+                              SPM {formatNoSpm(b.spm.noSpm)}
                             </a>
                           </td>
                           <td className="dk-num">

@@ -16,7 +16,6 @@ import {
   dengarRekapSpm,
   rekapRealisasiSpm,
 } from "../data/rekapSpm";
-import { ambilLedgerSpm } from "../data/ledgerSpm";
 import {
   ambilRevisiDipa,
   dengarRevisiDipa,
@@ -31,7 +30,10 @@ import {
   dengarKegiatanTambahan,
   rekapRealisasiTambahan,
 } from "../data/KegiatanTambahan";
-import { bacaCacheKegiatan, dengarCacheKegiatan } from "../data/cacheKegiatan";
+import {
+  ambilKetersediaanArsipBulan,
+  rekapKetersediaanSampai,
+} from "../data/ketersediaanArsip";
 
 /* ══════════════════════════════════════════════════════════════
    BLOK "RINGKASAN STATISTIK OPERASIONAL"
@@ -67,6 +69,15 @@ function formatRupiah(n) {
   const num = Number(n);
   if (!isFinite(num)) return "Rp 0";
   return "Rp " + num.toLocaleString("id-ID");
+}
+
+/* Hapus nol depan pada Nomor SPM supaya mudah terbaca,
+   mis. "00006T" → "6T", "00006" → "6". Huruf di akhir dipertahankan. */
+function formatNoSpm(no) {
+  if (!no || no === "—") return "—";
+  const m = String(no).match(/^(\d+)(.*)$/);
+  if (!m) return no;
+  return Number(m[1]) + m[2];
 }
 
 function hitungPersen(realisasi, pagu) {
@@ -182,6 +193,11 @@ export default function StatistikOperasional({
 
   const bulan = typeof bulanKontrol === "string" ? bulanKontrol : bulanInternal;
   const tahun = typeof tahunKontrol === "string" ? tahunKontrol : tahunInternal;
+  const nomorBulanFilter = NOMOR_BULAN[bulan] || 0;
+  const nomorBulanRef = useRef(nomorBulanFilter);
+  useEffect(() => {
+    nomorBulanRef.current = nomorBulanFilter;
+  }, [nomorBulanFilter]);
 
   const gantiBulan = (nilai) => {
     if (typeof bulanKontrol !== "string") setBulanInternal(nilai);
@@ -217,36 +233,25 @@ export default function StatistikOperasional({
      Ini sumber utama angka kartu "Realisasi Bulan (Rp.)". */
   const [rekapSpm, setRekapSpm] = useState(null);
   useEffect(() => dengarRekapSpm(setRekapSpm), []);
-  /* Ledger bukti SPM (Rekap SPM kumulatif per bulan) — dipakai tabel
-     "Total Digitalisasi Arsip Keuangan" untuk menghitung arsip/bukti
-     SPM tersimpan setiap bulannya dari tanggal SPM pada ledger. */
-  const [ledgerBukti, setLedgerBukti] = useState(null);
+  /* Ketersediaan Arsip Digital (tab kumulatif Data Kegiatan sesuai
+     bulan terpilih, kolom "Ketersediaan Arsip Digital") — sumber tabel
+     "Total Digitalisasi Arsip Keuangan": "LENGKAP" = tersimpan,
+     merah/kosong = belum tersimpan. */
+  const [ketersediaanArsip, setKetersediaanArsip] = useState(null);
   useEffect(() => {
-    const perBulan = (rekapSpm && rekapSpm.perBulan) || {};
-    let tabTerakhir = null;
-    for (let i = BULAN_OPTIONS.length - 1; i >= 0; i -= 1) {
-      const t = perBulan[BULAN_OPTIONS[i].id];
-      if (t && t.tab) {
-        tabTerakhir = t.tab;
-        break;
-      }
-    }
-    if (!tabTerakhir) {
-      setLedgerBukti(null);
-      return undefined;
-    }
     let batal = false;
-    ambilLedgerSpm({ tabNama: tabTerakhir })
-      .then((hasil) => {
-        if (!batal) setLedgerBukti(hasil);
+    ambilKetersediaanArsipBulan(nomorBulanFilter, false)
+      .then((data) => {
+        if (!batal) setKetersediaanArsip(data || null);
       })
-      .catch(() => {
-        if (!batal) setLedgerBukti(null);
+      .catch((e) => {
+        console.warn("Ketersediaan Arsip Digital gagal dimuat:", e);
+        if (!batal) setKetersediaanArsip(null);
       });
     return () => {
       batal = true;
     };
-  }, [rekapSpm]);
+  }, [nomorBulanFilter]);
   /* Data kegiatan yang diimpor lewat drag & drop folder (localStorage).
      Realisasi per bulan dari sumber ini ditambahkan ke angka Drive agar
      Dashboard ikut berubah seketika setelah folder dijatuhkan. */
@@ -349,6 +354,9 @@ export default function StatistikOperasional({
     ambilRekapSpm(API_KEY, paksa).catch((e) =>
       console.warn("Realisasi SPM gagal dimuat:", e)
     );
+    ambilKetersediaanArsipBulan(nomorBulanRef.current || 0, paksa)
+      .then((data) => setKetersediaanArsip(data || null))
+      .catch((e) => console.warn("Ketersediaan Arsip Digital gagal dimuat:", e));
   };
 
   useEffect(() => {
@@ -605,73 +613,29 @@ export default function StatistikOperasional({
     if (setActivePage) setActivePage("data-kegiatan");
   };
 
-  // Cache berkas kegiatan (Drive) — dipakai untuk mencocokkan bukti PDF
-  // terhadap data SPM di spreadsheet (ledger), agar "tersimpan" berarti
-  // sudah ada bukti laporan PDF.
-  const [cacheKegiatanRows, setCacheKegiatanRows] = useState(() => {
-    const c = bacaCacheKegiatan();
-    return c && Array.isArray(c.rows) ? c.rows : [];
-  });
-  useEffect(() => {
-    const lepas = dengarCacheKegiatan((paket) => {
-      setCacheKegiatanRows(paket && Array.isArray(paket.rows) ? paket.rows : []);
-    });
-    return lepas;
-  }, []);
-
-  const normalNoSpm = (no) => {
-    const digit = String(no || "").replace(/\D/g, "");
-    return digit ? String(Number(digit)) : "";
-  };
-
-  // Set nomor SPM yang memiliki bukti PDF tersimpan (dari cache Drive).
-  const spmDenganPdf = useMemo(() => {
-    const set = new Set();
-    (cacheKegiatanRows || []).forEach((r) => {
-      (r.berkas || []).forEach((b) => {
-        const no = normalNoSpm(b && b.spm && b.spm.noSpm);
-        if (no) set.add(no);
-      });
-    });
-    return set;
-  }, [cacheKegiatanRows]);
-
   // Tabel "Total Digitalisasi Arsip Keuangan":
-  // - Total/tersimpan/belum mengikuti jumlah SPM pada spreadsheet (ledger).
-  // - "Arsip tersimpan" = SPM di spreadsheet yang sudah punya bukti laporan PDF.
-  // - "Arsip belum tersimpan" = SPM di spreadsheet yang belum punya bukti PDF,
-  //   sehingga terlihat mana yang belum tersimpan.
-  const nomorBulanFilter = NOMOR_BULAN[bulan] || 0;
-  const digitalisasiSpm = useMemo(() => {
-    let total = 0;
-    let tersimpan = 0;
-    let totalTahun = 0;
-    let totalNilai = 0;
-    if (!ledgerBukti || !ledgerBukti.per) {
-      return { total: 0, tersimpan: 0, belum: 0, totalTahun: 0, totalNilai: 0 };
-    }
-    ledgerBukti.per.forEach((blok) => {
-      (blok.rows || []).forEach((r) => {
-        if (!r || !r.tanggal) return;
-        const m = Number(String(r.tanggal).slice(5, 7));
-        if (m < 1 || m > 12) return;
-        // Total keseluruhan SPM per tahun (tanpa filter bulan).
-        totalTahun += 1;
-        if (nomorBulanFilter && m !== nomorBulanFilter) return;
-        total += 1;
-        totalNilai += Number(r.nilai) || 0;
-        const no = normalNoSpm(r.noSpm);
-        if (no && spmDenganPdf.has(no)) tersimpan += 1;
-      });
+  // Sumber: tab kumulatif Data Kegiatan sesuai bulan terpilih, kolom
+  // "Ketersediaan Arsip Digital" pada setiap baris Nomor SPM.
+  // - "Arsip tersimpan"      = status "LENGKAP"
+  // - "Arsip belum tersimpan" = status merah/kosong
+  // Nilai dihitung kumulatif s.d. bulan terpilih.
+  const digitalisasiSpm = useMemo(
+    () => rekapKetersediaanSampai(ketersediaanArsip, nomorBulanFilter),
+    [ketersediaanArsip, nomorBulanFilter]
+  );
+
+  const [modalRekap, setModalRekap] = useState(null); // "tersimpan" | "belum" | null
+  const barisRekapModal = useMemo(() => {
+    if (!modalRekap) return [];
+    const rows = (ketersediaanArsip && ketersediaanArsip.rows) || [];
+    return rows.filter((r) => {
+      if (!r) return false;
+      if (nomorBulanFilter > 0 && r.bulan && r.bulan > nomorBulanFilter) return false;
+      if (modalRekap === "tersimpan") return !!r.tersimpan;
+      if (modalRekap === "belum") return !r.tersimpan;
+      return true;
     });
-    return {
-      total,
-      tersimpan,
-      belum: Math.max(0, total - tersimpan),
-      totalTahun,
-      totalNilai,
-    };
-  }, [ledgerBukti, nomorBulanFilter, spmDenganPdf]);
+  }, [modalRekap, ketersediaanArsip, nomorBulanFilter]);
 
   const totalSpm = digitalisasiSpm.total;
   const tersimpanSpm = digitalisasiSpm.tersimpan;
@@ -870,40 +834,127 @@ export default function StatistikOperasional({
             <tr>
               <td style={{ width: "40%" }}>ARSIP TERSIMPAN</td>
               <td>
-                <div className="tabeltotal-bar">
-                  <div
-                    className="tabeltotal-fill tabeltotal-fill-tersimpan"
-                    style={{ width: `${tersimpanPct}%` }}
-                  />
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ flex: "0 1 320px", minWidth: 0 }}>
+                    <div className="tabeltotal-bar">
+                      <div
+                        className="tabeltotal-fill tabeltotal-fill-tersimpan"
+                        style={{ width: `${tersimpanPct}%` }}
+                      />
+                    </div>
+                    <span className="tabeltotal-pct">
+                      {tersimpanSpm} SPM ({tersimpanPct} %)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setModalRekap("tersimpan")}
+                    disabled={!ketersediaanArsip}
+                    title="Lihat rekap arsip tersimpan"
+                    className="rekap-btn rekap-btn--tersimpan"
+                  >
+                    📄 Lihat Rekap
+                  </button>
                 </div>
-                <span className="tabeltotal-pct">
-                  {tersimpanSpm} SPM ({tersimpanPct} %)
-                </span>
               </td>
             </tr>
             <tr>
               <td>ARSIP BELUM TERSIMPAN</td>
               <td>
-                <div className="tabeltotal-bar">
-                  <div
-                    className="tabeltotal-fill tabeltotal-fill-belum"
-                    style={{ width: `${belumTersimpanPct}%` }}
-                  />
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ flex: "0 1 320px", minWidth: 0 }}>
+                    <div className="tabeltotal-bar">
+                      <div
+                        className="tabeltotal-fill tabeltotal-fill-belum"
+                        style={{ width: `${belumTersimpanPct}%` }}
+                      />
+                    </div>
+                    <span className="tabeltotal-pct">
+                      {belumSpm} SPM ({belumTersimpanPct} %)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setModalRekap("belum")}
+                    disabled={!ketersediaanArsip}
+                    title="Lihat rekap arsip belum tersimpan"
+                    className="rekap-btn rekap-btn--belum"
+                  >
+                    📄 Lihat Rekap
+                  </button>
                 </div>
-                <span className="tabeltotal-pct">
-                  {belumSpm} SPM ({belumTersimpanPct} %)
-                </span>
               </td>
             </tr>
           </tbody>
         </table>
-        <div className="tabeltotal-bawah">
-          TOTAL <span className="tabeltotal-pct">{totalSpm} SPM</span>
-          <span className="stat-kpi-note" style={{ marginLeft: 8 }}>
-            (sumber: bukti SPM / ledger, mengikuti filter bulan)
-          </span>
-        </div>
       </div>
+
+      {modalRekap && (
+        <div
+          className="modal-overlay"
+          onClick={() => setModalRekap(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Rekap Ketersediaan Arsip Digital"
+        >
+          <div
+            className="modal-box"
+            style={{ maxWidth: 760, maxHeight: "85vh", display: "flex", flexDirection: "column" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h4>
+                Rekap {modalRekap === "tersimpan" ? "Arsip Tersimpan" : "Arsip Belum Tersimpan"}
+                {" — "}Kumulatif s.d. {dataBulan.label} {dataBulan.tahunLabel}
+              </h4>
+              <button
+                type="button"
+                className="modal-close-btn"
+                onClick={() => setModalRekap(null)}
+                aria-label="Tutup"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="modal-body" style={{ overflow: "auto", flex: 1 }}>
+              <div className="stat-kpi-note" style={{ marginBottom: 10 }}>
+                {barisRekapModal.length} SPM · sumber: Data Kegiatan (Ketersediaan Arsip Digital)
+              </div>
+              {barisRekapModal.length === 0 ? (
+                <div style={{ color: "#64748b", fontSize: 14 }}>Tidak ada data.</div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table className="stat-table" style={{ fontSize: 13 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: 48 }}>No</th>
+                        <th>Nomor SPM</th>
+                        <th>Tanggal</th>
+                        <th>Ketersediaan Arsip Digital</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {barisRekapModal.map((r, idx) => (
+                        <tr key={`${r.noSpm}-${r.tanggal || ""}-${idx}`}>
+                          <td>{idx + 1}</td>
+                          <td>{formatNoSpm(r.noSpm)}</td>
+                          <td>{r.tanggal || "—"}</td>
+                          <td>{r.status || (r.tersimpan ? "LENGKAP" : "—")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn-cancel" onClick={() => setModalRekap(null)}>
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

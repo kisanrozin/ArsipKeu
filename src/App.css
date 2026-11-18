@@ -1107,22 +1107,30 @@ body {
 
 .dk-filter-bulan-chips {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .dk-filter-bulan-lead {
   font-size: 12px;
   font-weight: 600;
   color: #475569;
-  margin-right: 2px;
+}
+
+.dk-filter-bulan-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
 }
 
 .dk-chip-bulan {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 132px;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -1130,7 +1138,7 @@ body {
   background: #f1f5f9;
   border: 1px solid #e2e8f0;
   border-radius: 20px;
-  padding: 4px 11px;
+  padding: 6px 12px;
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -1144,7 +1152,13 @@ body {
 }
 .dk-chip-bulan-aktif:hover { background: #16224f; }
 
+.dk-chip-bulan-label {
+  line-height: 1.2;
+}
+
 .dk-chip-count {
+  min-width: 22px;
+  text-align: center;
   font-size: 11px;
   font-weight: 700;
   color: #1d4ed8;
@@ -1167,6 +1181,184 @@ body {
   padding-top: 8px;
 }
 .dk-filter-bulan-ringkas strong { color: #0f172a; }
+
+/* ── Sparkline filter bulan (desain dipercantik) ── */
+.dk-spark-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.dk-spark-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.dk-spark-icon {
+  font-size: 18px;
+}
+
+.dk-spark-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: 0.2px;
+}
+
+.dk-spark-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border: 1px solid #bfdbfe;
+  border-radius: 20px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.dk-spark-toggle {
+  width: 26px;
+  height: 26px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.dk-spark-toggle:hover {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+  color: #1e293b;
+}
+
+.dk-spark-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 7px;
+  width: 100%;
+  padding: 10px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.dk-spark-bulan {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 42px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.dk-spark-bulan:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.dk-spark-bulan:not(:disabled):hover {
+  transform: translateY(-3px);
+}
+
+.dk-spark-bulan:not(:disabled):hover .dk-spark-bar {
+  opacity: 0.9;
+}
+
+.dk-spark-bar-wrap {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.dk-spark-bar {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  transition: height 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s;
+}
+
+.dk-spark-bulan:not(:disabled):hover .dk-spark-bar {
+  filter: brightness(1.15);
+}
+
+.dk-spark-bulan-aktif .dk-spark-bar {
+  box-shadow: 0 0 12px rgba(30, 58, 138, 0.4);
+}
+
+.dk-spark-dot {
+  position: absolute;
+  top: -7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--navy);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.dk-spark-bulan-aktif .dk-spark-dot {
+  background: #1d4ed8;
+}
+
+.dk-spark-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: #64748b;
+  line-height: 1;
+  letter-spacing: 0.3px;
+}
+
+.dk-spark-bulan-aktif .dk-spark-label {
+  color: #1e3a8a;
+}
+
+.dk-spark-jumlah {
+  font-size: 10px;
+  font-weight: 800;
+  color: #94a3b8;
+  line-height: 1;
+}
+
+.dk-spark-bulan-aktif .dk-spark-jumlah {
+  color: #1e3a8a;
+}
+
+.dk-spark-bulan-kosong .dk-spark-jumlah {
+  color: #cbd5e1;
+}
+
+.dk-spark-footer {
+  margin-top: 10px;
+}
+
+.dk-spark-keterangan {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+/* Warna batang berdasarkan tinggi (heatmap) — ditetapkan inline via style di JSX jika perlu;
+   di sini kita gunakan variasi default hijau tua untuk semua batang agar seragam dan elegan. */
+.dk-spark-bar {
+  background: linear-gradient(180deg, #1e3a8a 0%, #3b82f6 100%);
+}
 
 .dk-fbr-baris,
 .dk-fbr-spm {
@@ -6674,6 +6866,61 @@ textarea.form-ctrl { resize: vertical; min-height: 90px; }
 .tabeltotal-bawah .tabeltotal-pct {
   font-size: 14px;
   color: #0284c7;
+}
+
+/* ── Tombol "Lihat Rekap" di tabel Total Digitalisasi Arsip Keuangan ── */
+.rekap-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  border: none;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.rekap-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.rekap-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.rekap-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.rekap-btn--tersimpan {
+  background: linear-gradient(180deg, #f0fdf4 0%, #bbf7d0 100%);
+  border: 1px solid #86efac;
+  color: #14532d;
+}
+
+.rekap-btn--tersimpan:hover:not(:disabled) {
+  background: linear-gradient(180deg, #dcfce7 0%, #86efac 100%);
+  border-color: #6ee7b7;
+  color: #115e59;
+}
+
+.rekap-btn--belum {
+  background: linear-gradient(180deg, #fff7f7 0%, #fecaca 100%);
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+}
+
+.rekap-btn--belum:hover:not(:disabled) {
+  background: linear-gradient(180deg, #fee2e2 0%, #fca5a5 100%);
+  border-color: #f87171;
+  color: #b91c1c;
 }
 
 
